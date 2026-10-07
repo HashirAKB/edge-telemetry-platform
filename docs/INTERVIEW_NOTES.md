@@ -41,3 +41,23 @@ No. QoS 1 is at-least-once, so duplicates can happen. SiteWise overwrites a valu
 
 **Q: How do the API schemas stay in sync with the API Gateway routes and the OpenAPI document?**
 Routes are data: `API_ROUTES` in `shared` lists method, path, owning service, auth requirement, and the zod schemas for params, query, and response. The OpenAPI 3.1 document is generated from that list, and the API stack will build API Gateway resources from the same list in Phase 5. Handlers validate requests with the same schemas, and consumers import the inferred TypeScript types. One definition gives runtime validation, types, docs, and infrastructure, so none of them can drift.
+
+## Phase 3: Sensor simulator
+
+**Q: How do you make simulated sensor data realistic but reproducible?**
+Each value is a base level scaled by machine load, plus slow drift, a daily cycle, and Gaussian noise, clamped to physical limits. Load wanders with a mean-reverting random walk on top of a shift-length cycle, and temperature follows load through a first-order lag, so a load change shows up in flow at once and in temperature over minutes. Randomness comes from a seeded generator, with a separate stream per machine and per signal, so the same seed always produces the same series. Tests and demos are repeatable, and adding a machine does not change the others.
+
+**Q: Walk me through the fault injection.**
+Four faults, scheduled by start offset and duration in config: bearing wear ramps vibration up to a multiple of normal, overheat steps temperature up and keeps rising, a stuck sensor freezes one value, and a dropout stops the machine publishing. Status turns FAULT only when an active fault pushes its signal past a threshold shared with the cloud (vibration above 7.1 mm/s, or an overheat temperature per machine type). A stuck sensor stays RUNNING on purpose. In a real plant a frozen value looks healthy, so detecting it is an analytics job, which makes it a good demo of why platform-level monitoring matters.
+
+**Q: What happens when publishing fails?**
+Every message goes through one ordered queue with one message in flight. If a publish fails, the message goes back to the front and the queue retries after an exponential backoff with full jitter, so many devices that failed together do not retry in lockstep. The queue has a hard size limit and drops the oldest message when full, which bounds memory on a small edge device. This buffer handles local failures like the Greengrass nucleus restarting. Network outages are handled by the MQTT client and, on the edge, the Greengrass disk spooler. On SIGTERM the simulator stops sampling, flushes for up to 5 seconds, and exits cleanly.
+
+**Q: How do you detect lost messages?**
+Every message carries `seq`, which increases by one per message a machine actually emits. It does not advance during a simulated dropout, so a gap in `seq` downstream means a message was lost in transit, not that the device was off. The outage test in Phase 6 uses this to prove the spooler loses nothing.
+
+**Q: How did you keep the image under 250 MB, and what did testing the image catch?**
+The `node:24-slim` base alone is 230 MB, so a naive install came to about 275 MB. The app is bundled into one file with esbuild, only the AWS IoT SDK stays in `node_modules`, and the build strips everything the image never loads, mainly AWS CRT native binaries for six other platforms. The result is 246.7 MB, and CI fails the build if it reaches 250 MB. Running MQTT mode inside the container then caught a real bug: the slim base has no CA certificates, so TLS could not work at all. Instead of installing the whole CA bundle, the image trusts only Amazon Root CA 1, verified by checksum, which is smaller and narrows trust to the one CA the device needs.
+
+**Q: Why does the image use Debian slim instead of Alpine?**
+The AWS IoT Device SDK uses the AWS Common Runtime, a native module built against glibc. Alpine uses musl, and native modules built for glibc either do not load or need special builds there. Debian slim keeps glibc and is still small. Distroless Node.js would be smaller again and is the documented fallback if the size margin runs out.
