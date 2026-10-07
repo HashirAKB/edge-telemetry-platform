@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store/
+*.tsbuildinfo
+
+# Build output
+dist/
+coverage/
+
+# AWS CDK
+cdk.out/
+
+# Secrets and certificates
+.env*
+.certs/
+*.pem
+*.key
+*.crt
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
