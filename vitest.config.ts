@@ -36,11 +36,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
-      exclude: ['**/*.test.ts'],
+      exclude: ['**/*.test.ts', '**/test-helpers.ts'],
       reporter: ['text', 'lcov'],
-      // NFR-6: 80 percent on shared, simulator, and api.
+      // NFR-6: 80 percent on shared, simulator, and api; Phase 2 sets 90 for shared.
       thresholds: {
-        'packages/shared/src/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
+        'packages/shared/src/**': { lines: 90, functions: 90, branches: 90, statements: 90 },
         'packages/simulator/src/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'packages/api/src/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
       },
