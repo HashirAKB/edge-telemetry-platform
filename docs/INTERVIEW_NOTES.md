@@ -21,3 +21,23 @@ Feature flags let CDK change default behavior without breaking existing apps. Ne
 
 **Q: How would this setup change for a larger team?**
 Add CODEOWNERS per package, required status checks and branch protection on `main`, Renovate or Dependabot for pinned versions, remote build caching, and separate deploy pipelines per stack with manual approval for production. The current setup is right-sized for one engineer and a reference build.
+
+## Phase 2: Shared contracts
+
+**Q: What does "single source of truth for topology" mean in this repo, concretely?**
+`packages/shared/src/topology.ts` lists the site, lines, and machines once. Topic names, IoT rule SQL, SiteWise property aliases, the alias template inside the rule, and the simulator's device list are all computed from it by small helper functions. Adding a machine is a one-line change. The topology is validated with zod when the module loads, so a typo (uppercase ID, duplicate machine) fails the build and `cdk synth` immediately, not at deploy time.
+
+**Q: What is a SiteWise property alias and why use it?**
+An alias is a string name for one asset property's data stream, for example `/kochi-01/line-a/pump-01/temperature_c`. The ingest API accepts an alias instead of the asset and property UUIDs, which only exist after deploy. Devices publish to a topic, the IoT rule rebuilds the alias from topic segments with `${topic(n)}`, and SiteWise resolves it. Devices never need cloud IDs. A unit test proves the rule template and the infra alias builder produce identical strings for every measurement of every machine, so this contract is checked without deploying.
+
+**Q: Why put the version in both the topic and the payload?**
+The topic version (`telemetry/v1/...`) lets a `v2` contract get its own rules and run side by side while devices migrate; nothing has to branch inside one rule. The payload `v` field is a guard that a message matches the tree it was published on. Schemas are strict, so an unexpected field or metric is an error on the device, before it is published, not a silent drop in the cloud.
+
+**Q: Why device timestamps, and what limits apply?**
+Buffered data replayed after an outage must land at the time it was measured, not when it arrived, or windowed metrics and history would be wrong. The rule converts payload `ts` (epoch ms) into SiteWise seconds plus nanos. SiteWise accepts values from 7 days in the past to 10 minutes in the future, inclusive. The SRS said 5 minutes, but the current API reference says 10, so I followed the docs and recorded it in ADR 0004. The schema also rejects timestamps before 2020 to catch the seconds-versus-milliseconds bug at the source.
+
+**Q: Is a duplicate QoS 1 delivery a problem?**
+No. QoS 1 is at-least-once, so duplicates can happen. SiteWise overwrites a value that has the same timestamp and quality, so a duplicate becomes an idempotent write and does not create an extra data point. Using device timestamps is what makes this work.
+
+**Q: How do the API schemas stay in sync with the API Gateway routes and the OpenAPI document?**
+Routes are data: `API_ROUTES` in `shared` lists method, path, owning service, auth requirement, and the zod schemas for params, query, and response. The OpenAPI 3.1 document is generated from that list, and the API stack will build API Gateway resources from the same list in Phase 5. Handlers validate requests with the same schemas, and consumers import the inferred TypeScript types. One definition gives runtime validation, types, docs, and infrastructure, so none of them can drift.
