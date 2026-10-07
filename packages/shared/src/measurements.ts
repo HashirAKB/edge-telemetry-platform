@@ -10,6 +10,19 @@ export const MACHINE_STATUSES = ['RUNNING', 'IDLE', 'FAULT'] as const;
 export type MachineStatus = (typeof MACHINE_STATUSES)[number];
 
 /**
+ * Vibration above this raises `vibration_alert` in SiteWise and FAULT status on the device.
+ * 7.1 mm/s is an illustrative severity threshold for a medium-sized machine, not a value
+ * taken from a specific standard or datasheet (SRS 4.3).
+ */
+export const VIBRATION_ALERT_THRESHOLD_MM_S = 7.1;
+
+/** Temperature above which an active overheat fault reports FAULT status (illustrative). */
+export const OVERHEAT_THRESHOLD_C: Readonly<Record<MachineType, number>> = {
+  pump: 80,
+  compressor: 95,
+};
+
+/**
  * Parameters for a simulated signal. The simulator combines them as
  * `base * (1 - loadSensitivity + loadSensitivity * load) + drift + daily sine + noise`,
  * delayed by `lagSeconds` relative to load changes, then clamped to `[min, max]`.

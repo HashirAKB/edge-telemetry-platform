@@ -19,7 +19,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "synth": "pnpm -F @etp/infra run synth",
-    "sim:local": "node -e \"console.error('sim:local is implemented in Phase 3'); process.exit(1)\"",
+    "sim:local": "pnpm -F @etp/simulator run start:local",
     "smoke": "node -e \"console.error('smoke is implemented in Phase 5'); process.exit(1)\"",
     "teardown": "node -e \"console.error('teardown is implemented in Phase 8'); process.exit(1)\""
   },

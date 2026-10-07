@@ -1,4 +1,5 @@
 packages:
   - packages/*
 allowBuilds:
+  aws-crt: false
   esbuild: true

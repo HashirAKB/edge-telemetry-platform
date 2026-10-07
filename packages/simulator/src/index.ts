@@ -1,6 +1,9 @@
-// Placeholder entry point. Signals, faults, and transports arrive in Phase 3.
-import { CONTRACT_VERSION } from '@etp/shared';
-
-export function telemetryTopicPrefix(): string {
-  return `telemetry/v${CONTRACT_VERSION}`;
-}
+export { startApp, SHUTDOWN_FLUSH_MS, type App } from './app.js';
+export { BoundedQueue, backoffDelayMs } from './buffer.js';
+export { loadConfig, SimulatorConfigSchema, type SimulatorConfig } from './config.js';
+export { FaultSpec } from './faults.js';
+export { createLogger, type Logger } from './logger.js';
+export { MachineSimulator, type Sample } from './machine.js';
+export { Publisher } from './publisher.js';
+export { Simulator } from './simulator.js';
+export { createTransport, type Transport } from './transports/index.js';
