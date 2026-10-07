@@ -1,6 +1,12 @@
-// Placeholder entry point. Topology, measurements, and schemas arrive in Phase 2.
-
-export const PLATFORM_NAME = 'edge-telemetry-platform';
-
-/** Version segment used in MQTT topics and the message `v` field (SRS 5.3). */
-export const CONTRACT_VERSION = 1;
+export * from './version.js';
+export * from './ids.js';
+export * from './measurements.js';
+export * from './topology.js';
+export * from './aliases.js';
+export * from './topics.js';
+export * from './message.js';
+export * from './api/common.js';
+export * from './api/assets.js';
+export * from './api/telemetry.js';
+export * from './api/health.js';
+export * from './api/routes.js';
