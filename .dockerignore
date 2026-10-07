@@ -1,0 +1,13 @@
+# Allow-list: only what the simulator image build needs. Keeps the context small and makes
+# it impossible to send .certs/, .env files, or credentials to the Docker daemon.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!packages/shared/package.json
+!packages/shared/src
+!packages/simulator/package.json
+!packages/simulator/src
+**/*.test.ts
+**/test-helpers.ts
