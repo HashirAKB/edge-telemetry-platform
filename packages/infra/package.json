@@ -1,0 +1,22 @@
+{
+  "name": "@etp/infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWS CDK app and stacks",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth --quiet",
+    "cdk": "cdk"
+  },
+  "dependencies": {
+    "@etp/shared": "workspace:*",
+    "aws-cdk-lib": "2.272.0",
+    "constructs": "10.8.1"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1144.0"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@etp/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telemetry query API Lambda services",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@etp/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@etp/shared": "workspace:*"
+  }
+}

@@ -1,0 +1,7 @@
+dist/
+coverage/
+cdk.out/
+pnpm-lock.yaml
+docs/SRS.md
+# Rewritten by `cdk flags`; keep the tool’s formatting
+packages/infra/cdk.json

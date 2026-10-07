@@ -1,0 +1,38 @@
+{
+  "name": "edge-telemetry-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Edge-to-cloud industrial telemetry platform on AWS (reference build)",
+  "license": "MIT",
+  "author": "Hashir Ahmed K B",
+  "type": "module",
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "synth": "pnpm -F @etp/infra run synth",
+    "sim:local": "node -e \"console.error('sim:local is implemented in Phase 3'); process.exit(1)\"",
+    "smoke": "node -e \"console.error('smoke is implemented in Phase 5'); process.exit(1)\"",
+    "teardown": "node -e \"console.error('teardown is implemented in Phase 8'); process.exit(1)\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.1",
+    "@vitest/coverage-v8": "5.0.3",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}
