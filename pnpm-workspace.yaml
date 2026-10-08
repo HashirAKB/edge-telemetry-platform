@@ -1,5 +1,11 @@
 packages:
   - packages/*
+  - scripts
 allowBuilds:
   aws-crt: false
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@aws-sdk/client-cloudwatch-logs@3.1148.0'
+  - '@aws-sdk/client-iot@3.1148.0'
+  - '@aws-sdk/client-iotsitewise@3.1148.0'
+  - '@aws-sdk/client-sts@3.1148.0'

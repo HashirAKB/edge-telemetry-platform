@@ -1,0 +1,23 @@
+{
+  "name": "@etp/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Operational scripts: dev device, ingest checks",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "device:provision": "tsx --conditions=@etp/source provision-dev-device.ts",
+    "device:deprovision": "tsx --conditions=@etp/source deprovision-dev-device.ts",
+    "device:check-policy": "tsx --conditions=@etp/source check-device-policy.ts",
+    "check:ingest": "tsx --conditions=@etp/source check-ingest.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "3.1148.0",
+    "@aws-sdk/client-iot": "3.1148.0",
+    "@aws-sdk/client-iotsitewise": "3.1148.0",
+    "@aws-sdk/client-sts": "3.1148.0",
+    "@etp/shared": "workspace:*",
+    "@etp/simulator": "workspace:*"
+  }
+}

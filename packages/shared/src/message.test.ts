@@ -82,14 +82,14 @@ describe('isWithinSiteWiseWindow', () => {
   const now = Date.UTC(2026, 9, 7, 12);
   const day = 24 * 60 * 60 * 1000;
 
-  it('accepts values up to 7 days old and 10 minutes ahead (inclusive)', () => {
+  it('accepts values up to 7 days old and 5 minutes ahead (inclusive)', () => {
     expect(isWithinSiteWiseWindow(now, now)).toBe(true);
     expect(isWithinSiteWiseWindow(now - 7 * day, now)).toBe(true);
-    expect(isWithinSiteWiseWindow(now + 10 * 60_000, now)).toBe(true);
+    expect(isWithinSiteWiseWindow(now + 5 * 60_000, now)).toBe(true);
   });
 
   it('rejects values outside the window', () => {
     expect(isWithinSiteWiseWindow(now - 7 * day - 1, now)).toBe(false);
-    expect(isWithinSiteWiseWindow(now + 10 * 60_000 + 1, now)).toBe(false);
+    expect(isWithinSiteWiseWindow(now + 5 * 60_000 + 1, now)).toBe(false);
   });
 });

@@ -21,7 +21,11 @@
     "synth": "pnpm -F @etp/infra run synth",
     "sim:local": "pnpm -F @etp/simulator run start:local",
     "smoke": "node -e \"console.error('smoke is implemented in Phase 5'); process.exit(1)\"",
-    "teardown": "node -e \"console.error('teardown is implemented in Phase 8'); process.exit(1)\""
+    "teardown": "node -e \"console.error('teardown is implemented in Phase 8'); process.exit(1)\"",
+    "device:provision": "pnpm -F @etp/scripts run device:provision",
+    "device:deprovision": "pnpm -F @etp/scripts run device:deprovision",
+    "device:check-policy": "pnpm -F @etp/scripts run device:check-policy",
+    "check:ingest": "pnpm -F @etp/scripts run check:ingest"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

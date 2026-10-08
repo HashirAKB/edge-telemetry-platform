@@ -5,6 +5,7 @@ export * from './topology.js';
 export * from './aliases.js';
 export * from './topics.js';
 export * from './message.js';
+export * from './sitewise-models.js';
 export * from './api/common.js';
 export * from './api/assets.js';
 export * from './api/telemetry.js';

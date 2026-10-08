@@ -19,12 +19,13 @@ export const MESSAGE_SIZE_TARGET_BYTES = 1024;
 export const MIN_TIMESTAMP_MS = Date.UTC(2020, 0, 1);
 
 /**
- * SiteWise accepts values timestamped within the inclusive range [-7 days, +10 minutes]
- * (BatchPutAssetPropertyValue API reference, checked 2026-10-07; the SRS said +5 minutes,
- * see ADR 0004). This bounds how long the edge can buffer before data is rejected.
+ * SiteWise accepts values timestamped up to 7 days in the past. For the future bound, AWS docs
+ * disagree: the BatchPutAssetPropertyValue reference says 10 minutes, the IoT rule action page
+ * says 5 (both checked 2026-10-09). Data arrives through the rule action, so the stricter
+ * 5 minutes applies (ADR 0004). This bounds how long the edge can buffer.
  */
 export const SITEWISE_MAX_PAST_MS = 7 * 24 * 60 * 60 * 1000;
-export const SITEWISE_MAX_FUTURE_MS = 10 * 60 * 1000;
+export const SITEWISE_MAX_FUTURE_MS = 5 * 60 * 1000;
 
 export function isWithinSiteWiseWindow(tsMs: number, nowMs: number): boolean {
   return tsMs >= nowMs - SITEWISE_MAX_PAST_MS && tsMs <= nowMs + SITEWISE_MAX_FUTURE_MS;
