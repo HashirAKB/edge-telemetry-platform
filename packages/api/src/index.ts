@@ -1,4 +1,7 @@
-// Placeholder entry point. Handlers, services, and the SiteWise repository arrive in Phase 5.
-import { CONTRACT_VERSION } from '@etp/shared';
-
-export const API_BASE_PATH = `/v${CONTRACT_VERSION}`;
+export { createHandler, type AppOptions, type RouteImpl } from './http/app.js';
+export { ApiError, parseOrThrow } from './http/errors.js';
+export { catalogRoutes, telemetryRoutes } from './routes.js';
+export { CatalogService, TREE_TTL_MS } from './services/catalog.js';
+export { TelemetryService } from './services/telemetry.js';
+export type { SiteWiseReader } from './sitewise/reader.js';
+export { SdkSiteWiseReader } from './sitewise/sdk-reader.js';

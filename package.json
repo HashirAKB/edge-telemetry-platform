@@ -20,17 +20,20 @@
     "test:coverage": "vitest run --coverage",
     "synth": "pnpm -F @etp/infra run synth",
     "sim:local": "pnpm -F @etp/simulator run start:local",
-    "smoke": "node -e \"console.error('smoke is implemented in Phase 5'); process.exit(1)\"",
+    "smoke": "pnpm -F @etp/scripts run smoke",
     "teardown": "node -e \"console.error('teardown is implemented in Phase 8'); process.exit(1)\"",
     "device:provision": "pnpm -F @etp/scripts run device:provision",
     "device:deprovision": "pnpm -F @etp/scripts run device:deprovision",
     "device:check-policy": "pnpm -F @etp/scripts run device:check-policy",
-    "check:ingest": "pnpm -F @etp/scripts run check:ingest"
+    "check:ingest": "pnpm -F @etp/scripts run check:ingest",
+    "openapi": "pnpm -F @etp/scripts run openapi",
+    "openapi:check": "pnpm -F @etp/scripts run openapi:check"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.1",
     "@vitest/coverage-v8": "5.0.3",
+    "esbuild": "0.28.2",
     "eslint": "10.12.0",
     "eslint-config-prettier": "10.1.8",
     "prettier": "3.9.9",

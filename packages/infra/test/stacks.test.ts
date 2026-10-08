@@ -2,6 +2,7 @@ import { App, type Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { aliasFor, listMachines, measurementNamesFor, topology, type Topology } from '@etp/shared';
+import { ApiStack, USAGE_PLAN } from '../src/stacks/api-stack.js';
 import { FoundationStack, RULE_ERRORS_LOG_GROUP } from '../src/stacks/foundation-stack.js';
 import { IngestStack, ruleNameFor } from '../src/stacks/ingest-stack.js';
 import { SiteWiseStack } from '../src/stacks/sitewise-stack.js';
@@ -26,12 +27,14 @@ function synth(options: { plant?: Topology; rawArchive?: boolean } = {}) {
     ruleErrorsLogGroup: foundation.ruleErrorsLogGroup,
     rawArchive: options.rawArchive ?? false,
   });
+  const api = new ApiStack(app, 'Api', { ...common, buildVersion: 'test' });
   const template = (stack: Stack) => Template.fromStack(stack);
   return {
     app,
     foundation: template(foundation),
     sitewise: template(sitewise),
     ingest: template(ingest),
+    api: template(api),
   };
 }
 
@@ -39,7 +42,7 @@ function resources(template: Template, type: string): Resource[] {
   return Object.values(template.findResources(type)) as Resource[];
 }
 
-const { app, foundation, sitewise, ingest } = synth();
+const { app, foundation, sitewise, ingest, api } = synth();
 
 describe('EtpSiteWise (FR-SW-1, FR-SW-2)', () => {
   it('creates the four asset models', () => {
@@ -210,8 +213,62 @@ describe('EtpFoundation', () => {
   });
 });
 
+describe('EtpApi (SRS 6.5)', () => {
+  it('runs both services on nodejs24.x, ARM64, with X-Ray tracing', () => {
+    const fns = resources(api, 'AWS::Lambda::Function');
+    expect(fns).toHaveLength(2);
+    for (const f of fns) {
+      expect(f.Properties).toMatchObject({
+        Runtime: 'nodejs24.x',
+        Architectures: ['arm64'],
+        TracingConfig: { Mode: 'Active' },
+        MemorySize: 256,
+        Timeout: 10,
+      });
+    }
+  });
+
+  it('keeps Lambda logs for 14 days', () => {
+    for (const g of resources(api, 'AWS::Logs::LogGroup')) {
+      expect(g.Properties.RetentionInDays).toBe(14);
+    }
+  });
+
+  it('requires an API key on every route except health and CORS preflight (FR-API-9)', () => {
+    const methods = resources(api, 'AWS::ApiGateway::Method');
+    const gets = methods.filter((m) => m.Properties.HttpMethod === 'GET');
+    expect(gets).toHaveLength(7);
+    const open = gets.filter((m) => m.Properties.ApiKeyRequired !== true);
+    expect(open.map((m) => m.Properties.OperationName)).toEqual(['FR-API-7']);
+    for (const m of methods.filter((m) => m.Properties.HttpMethod === 'OPTIONS')) {
+      expect(m.Properties.ApiKeyRequired).not.toBe(true);
+    }
+  });
+
+  it('throttles and caps usage per key', () => {
+    api.hasResourceProperties('AWS::ApiGateway::UsagePlan', {
+      Throttle: { RateLimit: USAGE_PLAN.rateLimit, BurstLimit: USAGE_PLAN.burstLimit },
+      Quota: { Limit: USAGE_PLAN.dailyQuota, Period: 'DAY' },
+    });
+  });
+
+  it('grants each function read-only SiteWise access, scoped to assets and models', () => {
+    const json = JSON.stringify(resources(api, 'AWS::IAM::Policy'));
+    expect(json).toContain('iotsitewise:GetAssetPropertyAggregates');
+    expect(json).not.toMatch(/iotsitewise:(BatchPut|Create|Update|Delete|Associate)/);
+    expect(json).toContain(':asset/*');
+    expect(json).toContain(':asset-model/*');
+  });
+
+  it('never outputs the API key value', () => {
+    const outputs = JSON.stringify(api.toJSON().Outputs);
+    expect(outputs).toContain('ApiKeyId');
+    expect(outputs).not.toMatch(/"Fn::GetAtt":\["DevApiKey/);
+  });
+});
+
 describe('security and hygiene across all stacks (NFR-4, NFR-8)', () => {
-  const templates = { foundation, sitewise, ingest };
+  const templates = { foundation, sitewise, ingest, api };
 
   it('has no IAM statement with a wildcard action', () => {
     for (const [name, t] of Object.entries(templates)) {
@@ -229,7 +286,7 @@ describe('security and hygiene across all stacks (NFR-4, NFR-8)', () => {
 
   it('tags every stack with the project tags', () => {
     const assembly = app.synth();
-    for (const id of ['Foundation', 'SiteWise', 'Ingest']) {
+    for (const id of ['Foundation', 'SiteWise', 'Ingest', 'Api']) {
       expect(assembly.getStackByName(id).tags).toEqual(PROJECT_TAGS);
     }
   });

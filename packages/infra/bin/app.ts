@@ -1,4 +1,5 @@
 import { App } from 'aws-cdk-lib';
+import { ApiStack } from '../src/stacks/api-stack.js';
 import { FoundationStack } from '../src/stacks/foundation-stack.js';
 import { IngestStack } from '../src/stacks/ingest-stack.js';
 import { SiteWiseStack } from '../src/stacks/sitewise-stack.js';
@@ -24,3 +25,6 @@ new IngestStack(app, 'EtpIngest', {
   ruleErrorsLogGroup: foundation.ruleErrorsLogGroup,
   rawArchive,
 });
+
+const buildVersion = String(app.node.tryGetContext('buildVersion') ?? 'dev');
+new ApiStack(app, 'EtpApi', { ...common, buildVersion });

@@ -20,6 +20,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@etp/shared": "workspace:*"
+    "@aws-lambda-powertools/logger": "2.36.0",
+    "@aws-lambda-powertools/metrics": "2.36.0",
+    "@aws-lambda-powertools/tracer": "2.36.0",
+    "@aws-sdk/client-iotsitewise": "3.1148.0",
+    "@etp/shared": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.164"
   }
 }
