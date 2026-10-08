@@ -22,7 +22,7 @@ function synth(options: { plant?: Topology; rawArchive?: boolean } = {}) {
   });
   const ingest = new IngestStack(app, 'Ingest', {
     ...common,
-    rootAssetId: sitewise.rootAssetId,
+    machineAssetIds: sitewise.machineAssetIds,
     ruleErrorsLogGroup: foundation.ruleErrorsLogGroup,
     rawArchive: options.rawArchive ?? false,
   });
@@ -152,21 +152,27 @@ describe('EtpIngest (FR-ING-1 to FR-ING-6)', () => {
     });
   });
 
-  it("lets the rule role write only to the site's asset tree (FR-ING-5)", () => {
+  it("scopes the rule role to this site's data streams and machine assets (FR-ING-5)", () => {
     const policies = resources(ingest, 'AWS::IAM::Policy');
     const sitewisePolicy = policies.find((p) =>
       JSON.stringify(p.Properties).includes('BatchPutAssetPropertyValue'),
     );
     const doc = sitewisePolicy?.Properties.PolicyDocument as {
-      Statement: { Action: string; Resource: unknown; Condition: unknown }[];
+      Statement: { Action: string; Resource: unknown; Condition?: unknown }[];
     };
-    expect(doc.Statement).toHaveLength(1);
-    const [statement] = doc.Statement;
-    expect(statement?.Action).toBe('iotsitewise:BatchPutAssetPropertyValue');
-    // Asset ARNs only: the docs' Resource "*" form was denied for alias writes (ADR 0012).
-    expect(JSON.stringify(statement?.Resource)).toContain(':asset/*');
-    expect(statement?.Resource).not.toBe('*');
-    expect(JSON.stringify(statement?.Condition)).toContain('iotsitewise:assetHierarchyPath');
+    expect(doc.Statement.map((s) => s.Action)).toEqual([
+      'iotsitewise:BatchPutAssetPropertyValue',
+      'iotsitewise:BatchPutAssetPropertyValue',
+    ]);
+    const [streams, assets] = doc.Statement;
+    // Data streams: only aliases under this site.
+    expect(JSON.stringify(streams?.Resource)).toContain(':time-series/*');
+    expect(streams?.Condition).toEqual({
+      StringLike: { 'iotsitewise:propertyAlias': '/kochi-01/*' },
+    });
+    // Assets: one explicit ARN per machine, no wildcard.
+    expect(assets?.Resource).toHaveLength(listMachines().length);
+    expect(JSON.stringify(assets?.Resource)).not.toContain('asset/*');
   });
 
   it('guards the IoT service principal against confused-deputy use', () => {

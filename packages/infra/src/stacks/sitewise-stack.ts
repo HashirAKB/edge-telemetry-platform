@@ -27,6 +27,8 @@ export interface SiteWiseStackProps extends StackProps {
  */
 export class SiteWiseStack extends Stack {
   readonly rootAssetId: string;
+  /** Assets that receive telemetry (one per machine); the only ones the ingest rule writes to. */
+  readonly machineAssetIds: string[] = [];
   readonly models: Readonly<Record<ModelType, sitewise.CfnAssetModel>>;
 
   constructor(scope: Construct, id: string, props: SiteWiseStackProps = {}) {
@@ -66,6 +68,7 @@ export class SiteWiseStack extends Stack {
             notificationState: 'DISABLED',
           })),
         });
+        this.machineAssetIds.push(asset.attrAssetId);
         return { asset, type: machine.type };
       });
 

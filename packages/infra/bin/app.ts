@@ -20,7 +20,7 @@ const foundation = new FoundationStack(app, 'EtpFoundation', common);
 const sitewise = new SiteWiseStack(app, 'EtpSiteWise', common);
 new IngestStack(app, 'EtpIngest', {
   ...common,
-  rootAssetId: sitewise.rootAssetId,
+  machineAssetIds: sitewise.machineAssetIds,
   ruleErrorsLogGroup: foundation.ruleErrorsLogGroup,
   rawArchive,
 });

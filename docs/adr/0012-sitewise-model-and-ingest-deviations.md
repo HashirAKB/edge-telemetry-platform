@@ -25,19 +25,25 @@ The SRS rolls up pump vibration only. A site-level "max vibration" that ignores 
 
 `sum(vibration_alert)` counts alert _samples_, not minutes: at a 5 second interval that would report 60 for a fully alerting 5 minute window. The fraction of samples in alert, times 5, is minutes in alert as long as samples are evenly spaced, which they are.
 
-### 5. The rule role is scoped to asset ARNs, not `Resource: "*"`
+### 5. The rule role grants the data stream and the machine assets, without the hierarchy condition
 
-The AWS IoT SiteWise rule action docs show `Resource: "*"` with an `iotsitewise:assetHierarchyPath` condition. Deployed that way, every write by property alias failed with `AccessDeniedException`. Tested live against real traffic:
+The AWS IoT SiteWise rule action docs show `Resource: "*"` with an `iotsitewise:assetHierarchyPath` condition. Deployed that way, every write by property alias failed with `AccessDeniedException`, and the rule error action logged each denial with its reason.
 
-| Policy                                                         | Result                                     |
-| -------------------------------------------------------------- | ------------------------------------------ |
-| `Resource: "*"`, `assetHierarchyPath` condition (docs example) | Denied                                     |
-| `time-series/*`, `propertyAlias` condition                     | Denied                                     |
-| `time-series/*`, no condition                                  | Denied ("no identity-based policy allows") |
-| `asset/*` and `time-series/*`, no condition                    | Allowed                                    |
-| **`asset/*`, `assetHierarchyPath` condition**                  | **Allowed** (chosen)                       |
+Candidate policies were then tested against live traffic, redeploying only the ingest stack each time. One complication shaped the method: **policy changes took about 4 minutes to reach the IoT rule engine** (measured on the switch to the final policy: deployed 20:47:43, last denial 20:51:51 UTC). Several early experiments ran for less than that, so their results reflected the previous policy, and one of them was briefly and wrongly taken as a fix. Only results observed for longer than the propagation delay, starting from a denied state, count:
 
-For aliases that belong to asset properties, SiteWise authorizes each entry against the **asset**. The chosen policy allows one action on this account's and region's asset ARNs, and only beneath the site's root asset. The SiteWise user guide's note to "authorize the time-series resource if you use a property alias" applies to data streams that are not associated with an asset property, which this platform does not use.
+| Policy | Observed for | Result |
+|---|---|---|
+| `Resource: "*"` with `assetHierarchyPath` (docs example) | 5 min from stack creation | Denied |
+| 5 machine asset ARNs only, no condition | 12 min | Denied: a time-series grant is required |
+| `time-series/*` with `iotsitewise:propertyAlias` `/kochi-01/*`, plus the 5 machine asset ARNs | 12 min, then a clean 11 minute acceptance run | **Allowed** (chosen) |
+
+Conclusions:
+
+- For an alias that belongs to an asset property, SiteWise authorizes the write against the **data stream** (the `time-series` resource). This matches the SiteWise user guide: "Authorize the time-series resource if you use a property alias."
+- SiteWise does supply `iotsitewise:propertyAlias` for these writes (the allowed policy depends on it), and evidently does not supply `iotsitewise:assetHierarchyPath`, so the docs' example cannot work for alias-based ingestion.
+- Whether the asset statement is *also* required was not isolated. It is kept: it names the 5 machine assets explicitly and cannot reach any other asset, including this site's line and site assets.
+
+The resulting role can call one action, only on data streams whose alias starts with `/kochi-01/`, and only on the 5 machine assets.
 
 ### 6. SiteWise accepts timestamps at most 5 minutes in the future
 
@@ -54,4 +60,4 @@ Each asset has an external ID built from topology IDs joined by dots (`kochi-01.
 ## Consequences
 
 - The SRS names are kept for every property it defines; additions are `avg_temperature_5m` (pump) and `max_vibration_5m` (compressor).
-- The IAM finding is the most useful interview story from this phase: the documented example did not work, and the fix came from testing each candidate against live traffic and reading the denial messages, not from guessing.
+- The IAM finding is the most useful interview story from this phase: the documented example did not work, a quick check gave a false pass because of IAM propagation delay, and the reliable answer came from testing each candidate long enough, from a denied state, against live traffic.

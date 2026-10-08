@@ -11,12 +11,15 @@ import {
   ruleSqlForType,
   STATUS_MEASUREMENT,
   TOPIC_SEGMENT,
+  topology,
   type MachineType,
 } from '@etp/shared';
 
 export interface IngestStackProps extends StackProps {
-  /** Root of the SiteWise hierarchy; the rule role may only write beneath it (FR-ING-5). */
-  readonly rootAssetId: string;
+  /** The machine assets the rules write to; the role may write to these and nothing else. */
+  readonly machineAssetIds: readonly string[];
+  /** Site whose aliases the role may write; defaults to the shared topology's site. */
+  readonly siteId?: string;
   readonly ruleErrorsLogGroup: logs.ILogGroup;
   /** FR-ING-7: also archive raw payloads to S3. Off by default. */
   readonly rawArchive?: boolean;
@@ -69,19 +72,25 @@ export class IngestStack extends Stack {
       assumedBy: iotPrincipal,
       description: 'IoT rules write telemetry into the etp SiteWise hierarchy only',
     });
-    // Verified live (ADR 0012): for aliases that belong to asset properties, SiteWise authorizes
-    // each entry against the asset. The AWS IoT docs example (Resource "*" with this condition)
-    // was denied; scoping Resource to asset ARNs with the same condition works and limits the
-    // role to the site's own asset tree.
+    // FR-ING-5, ADR 0012. Verified against live traffic: for an alias that belongs to an asset
+    // property, SiteWise authorizes the write against the data stream (time-series) as well as
+    // the asset, and does not supply iotsitewise:assetHierarchyPath, so the AWS IoT docs'
+    // example policy is always denied. The role may write to data streams whose alias is under
+    // this site, and to the machine assets by explicit ARN (never the line or site assets).
+    const siteId = props.siteId ?? topology.site.id;
+    const arn = (resource: string) =>
+      `arn:${this.partition}:iotsitewise:${this.region}:${this.account}:${resource}`;
     ruleRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ['iotsitewise:BatchPutAssetPropertyValue'],
-        resources: [`arn:${this.partition}:iotsitewise:${this.region}:${this.account}:asset/*`],
-        conditions: {
-          StringLike: {
-            'iotsitewise:assetHierarchyPath': [`/${props.rootAssetId}`, `/${props.rootAssetId}/*`],
-          },
-        },
+        resources: [arn('time-series/*')],
+        conditions: { StringLike: { 'iotsitewise:propertyAlias': `/${siteId}/*` } },
+      }),
+    );
+    ruleRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['iotsitewise:BatchPutAssetPropertyValue'],
+        resources: props.machineAssetIds.map((id) => arn(`asset/${id}`)),
       }),
     );
 
