@@ -34,7 +34,7 @@ An alias is a string name for one asset property's data stream, for example `/ko
 The topic version (`telemetry/v1/...`) lets a `v2` contract get its own rules and run side by side while devices migrate; nothing has to branch inside one rule. The payload `v` field is a guard that a message matches the tree it was published on. Schemas are strict, so an unexpected field or metric is an error on the device, before it is published, not a silent drop in the cloud.
 
 **Q: Why device timestamps, and what limits apply?**
-Buffered data replayed after an outage must land at the time it was measured, not when it arrived, or windowed metrics and history would be wrong. The rule converts payload `ts` (epoch ms) into SiteWise seconds plus nanos. SiteWise accepts values from 7 days in the past to 10 minutes in the future, inclusive. The SRS said 5 minutes, but the current API reference says 10, so I followed the docs and recorded it in ADR 0004. The schema also rejects timestamps before 2020 to catch the seconds-versus-milliseconds bug at the source.
+Buffered data replayed after an outage must land at the time it was measured, not when it arrived, or windowed metrics and history would be wrong. The rule converts payload `ts` (epoch ms) into SiteWise seconds plus nanos. SiteWise accepts values from 7 days in the past to a few minutes in the future. Two AWS pages disagree on the future bound (the API reference says 10 minutes, the IoT rule action page says 5), and our data arrives through the rule action, so I used the stricter 5 minutes and recorded both sources in ADR 0004. The schema also rejects timestamps before 2020 to catch the seconds-versus-milliseconds bug at the source.
 
 **Q: Is a duplicate QoS 1 delivery a problem?**
 No. QoS 1 is at-least-once, so duplicates can happen. SiteWise overwrites a value that has the same timestamp and quality, so a duplicate becomes an idempotent write and does not create an extra data point. Using device timestamps is what makes this work.
@@ -61,3 +61,23 @@ The `node:24-slim` base alone is 230 MB, so a naive install came to about 275 MB
 
 **Q: Why does the image use Debian slim instead of Alpine?**
 The AWS IoT Device SDK uses the AWS Common Runtime, a native module built against glibc. Alpine uses musl, and native modules built for glibc either do not load or need special builds there. Debian slim keeps glibc and is still small. Distroless Node.js would be smaller again and is the documented fallback if the size margin runs out.
+
+## Phase 4: SiteWise models and ingestion
+
+**Q: What is the difference between an asset model and an asset in SiteWise?**
+An asset model is the template: which properties a kind of equipment has, their types and units, the formulas for transforms and metrics, and which child models it can contain. An asset is one real thing built from a model, like `pump-01`. Here there are four models (site, line, pump, compressor) and eight assets, one per topology node, all generated from the shared topology. Adding a pump means one more asset of the existing pump model, not a new model.
+
+**Q: Measurement, transform, metric, attribute: what is each?**
+A measurement is raw data from the device (`temperature_c`). A transform is computed per incoming data point with no time window (`temperature_f`, or `vibration_alert = gt(vibration, 7.1)`). A metric aggregates over a tumbling time window (`max_vibration_5m`) and can aggregate across child assets through a hierarchy. An attribute is static metadata (`timezone`). Measurements are stored; transforms and metrics are computed by SiteWise, so application teams get derived values without writing stream processing.
+
+**Q: How do hierarchy rollups work, and what did the docs change?**
+A line model has hierarchies `pumps` and `compressors`. A line metric uses a variable that points at a property of the child model through a hierarchy, and SiteWise aggregates it over all associated child assets in each window. The docs say a metric's metric inputs must have the same window, so a 5 minute line metric cannot read a 1 minute pump metric as the SRS proposed. Pumps got a 5 minute average, and a unit test now enforces the rule so a bad model fails in CI instead of in CloudFormation.
+
+**Q: The first real data run failed. What happened and how did you fix it?**
+Every write was denied with `AccessDeniedException`. The rule error action logged the full reason, which is why that error log exists. The rule role followed the AWS IoT docs example: `Resource: "*"` with an `assetHierarchyPath` condition. I tested candidate policies one at a time against live traffic, each a 20 second redeploy of only the ingest stack, and read each denial. For aliases that belong to asset properties, SiteWise checks the asset resource, and the version that works names asset ARNs explicitly with the same hierarchy condition. The role can write to this site's asset tree only. The lesson: docs examples are a starting point, and an error action plus a fast deploy loop turn a confusing failure into a 10 minute fix.
+
+**Q: How do you know the device policy is least privilege?**
+A script tries what the device must not be able to do. Publishing to a telemetry topic is accepted. Publishing outside `telemetry/v1/` is rejected by the broker with MQTT reason code 135 (not authorized). Connecting with any client ID other than the thing name is refused. Testing the denials matters as much as testing the allows.
+
+**Q: What does this cost, and what would change at scale?**
+About $9 per million device messages here, mostly SiteWise ingestion, which bills each of the 5 values in a message separately. That is 3 cents an hour for 5 machines at a 5 second interval and nothing when idle, so the platform runs on demand. At scale I would batch values per stream on the edge (Stream Manager or buffered ingestion), pick sampling rates per measurement instead of one global interval, and move older data to the cold tier.
