@@ -69,12 +69,14 @@ export class IngestStack extends Stack {
       assumedBy: iotPrincipal,
       description: 'IoT rules write telemetry into the etp SiteWise hierarchy only',
     });
+    // Verified live (ADR 0012): for aliases that belong to asset properties, SiteWise authorizes
+    // each entry against the asset. The AWS IoT docs example (Resource "*" with this condition)
+    // was denied; scoping Resource to asset ARNs with the same condition works and limits the
+    // role to the site's own asset tree.
     ruleRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ['iotsitewise:BatchPutAssetPropertyValue'],
-        // SiteWise authorizes each entry against the asset it resolves to. The resource must be
-        // "*" for alias-based writes; the hierarchy-path condition is what scopes it.
-        resources: ['*'],
+        resources: [`arn:${this.partition}:iotsitewise:${this.region}:${this.account}:asset/*`],
         conditions: {
           StringLike: {
             'iotsitewise:assetHierarchyPath': [`/${props.rootAssetId}`, `/${props.rootAssetId}/*`],

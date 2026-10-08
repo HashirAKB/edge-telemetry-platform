@@ -152,17 +152,21 @@ describe('EtpIngest (FR-ING-1 to FR-ING-6)', () => {
     });
   });
 
-  it('lets the rule role write only to the site hierarchy (FR-ING-5)', () => {
+  it("lets the rule role write only to the site's asset tree (FR-ING-5)", () => {
     const policies = resources(ingest, 'AWS::IAM::Policy');
     const sitewisePolicy = policies.find((p) =>
       JSON.stringify(p.Properties).includes('BatchPutAssetPropertyValue'),
     );
-    const doc = sitewisePolicy?.Properties.PolicyDocument as { Statement: unknown[] };
+    const doc = sitewisePolicy?.Properties.PolicyDocument as {
+      Statement: { Action: string; Resource: unknown; Condition: unknown }[];
+    };
     expect(doc.Statement).toHaveLength(1);
-    expect(doc.Statement[0]).toMatchObject({
-      Action: 'iotsitewise:BatchPutAssetPropertyValue',
-      Condition: { StringLike: { 'iotsitewise:assetHierarchyPath': expect.any(Array) as unknown } },
-    });
+    const [statement] = doc.Statement;
+    expect(statement?.Action).toBe('iotsitewise:BatchPutAssetPropertyValue');
+    // Asset ARNs only: the docs' Resource "*" form was denied for alias writes (ADR 0012).
+    expect(JSON.stringify(statement?.Resource)).toContain(':asset/*');
+    expect(statement?.Resource).not.toBe('*');
+    expect(JSON.stringify(statement?.Condition)).toContain('iotsitewise:assetHierarchyPath');
   });
 
   it('guards the IoT service principal against confused-deputy use', () => {
