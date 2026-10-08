@@ -31,17 +31,17 @@ The AWS IoT SiteWise rule action docs show `Resource: "*"` with an `iotsitewise:
 
 Candidate policies were then tested against live traffic, redeploying only the ingest stack each time. One complication shaped the method: **policy changes took about 4 minutes to reach the IoT rule engine** (measured on the switch to the final policy: deployed 20:47:43, last denial 20:51:51 UTC). Several early experiments ran for less than that, so their results reflected the previous policy, and one of them was briefly and wrongly taken as a fix. Only results observed for longer than the propagation delay, starting from a denied state, count:
 
-| Policy | Observed for | Result |
-|---|---|---|
-| `Resource: "*"` with `assetHierarchyPath` (docs example) | 5 min from stack creation | Denied |
-| 5 machine asset ARNs only, no condition | 12 min | Denied: a time-series grant is required |
-| `time-series/*` with `iotsitewise:propertyAlias` `/kochi-01/*`, plus the 5 machine asset ARNs | 12 min, then a clean 11 minute acceptance run | **Allowed** (chosen) |
+| Policy                                                                                        | Observed for                                  | Result                                  |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------- |
+| `Resource: "*"` with `assetHierarchyPath` (docs example)                                      | 5 min from stack creation                     | Denied                                  |
+| 5 machine asset ARNs only, no condition                                                       | 12 min                                        | Denied: a time-series grant is required |
+| `time-series/*` with `iotsitewise:propertyAlias` `/kochi-01/*`, plus the 5 machine asset ARNs | 12 min, then a clean 11 minute acceptance run | **Allowed** (chosen)                    |
 
 Conclusions:
 
 - For an alias that belongs to an asset property, SiteWise authorizes the write against the **data stream** (the `time-series` resource). This matches the SiteWise user guide: "Authorize the time-series resource if you use a property alias."
 - SiteWise does supply `iotsitewise:propertyAlias` for these writes (the allowed policy depends on it), and evidently does not supply `iotsitewise:assetHierarchyPath`, so the docs' example cannot work for alias-based ingestion.
-- Whether the asset statement is *also* required was not isolated. It is kept: it names the 5 machine assets explicitly and cannot reach any other asset, including this site's line and site assets.
+- Whether the asset statement is _also_ required was not isolated. It is kept: it names the 5 machine assets explicitly and cannot reach any other asset, including this site's line and site assets.
 
 The resulting role can call one action, only on data streams whose alias starts with `/kochi-01/`, and only on the 5 machine assets.
 
