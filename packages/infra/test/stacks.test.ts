@@ -10,6 +10,7 @@ import {
   EDGE,
   EdgeStack,
   GREENGRASS_VERSIONS,
+  NUCLEUS_JVM_OPTIONS,
   SPOOLER_MAX_BYTES,
   simulatorRecipe,
 } from '../src/stacks/edge-stack.js';
@@ -347,6 +348,9 @@ describe('EtpEdge (SRS 6.2)', () => {
 
   it('derives a new component version when the image tag changes, and keeps it otherwise', () => {
     expect(componentVersion).toMatch(/^1\.0\.\d+$/);
+    // Greengrass rejects any version part above 999999 (found on first deploy).
+    for (const part of componentVersion.split('.'))
+      expect(Number(part)).toBeLessThanOrEqual(999_999);
     expect(synth({ imageTag: 'abc1234' }).componentVersion).toBe(componentVersion);
     expect(synth({ imageTag: 'def5678' }).componentVersion).not.toBe(componentVersion);
   });
@@ -366,6 +370,7 @@ describe('EtpEdge (SRS 6.2)', () => {
     expect(
       JSON.parse(components['aws.greengrass.Nucleus']?.ConfigurationUpdate?.Merge ?? '{}'),
     ).toEqual({
+      jvmOptions: NUCLEUS_JVM_OPTIONS,
       mqtt: {
         spooler: {
           storageType: 'Disk',
@@ -407,9 +412,9 @@ describe('EtpEdgeHost (FR-EDGE-6)', () => {
     });
   });
 
-  it('runs a t3.small with an encrypted gp3 volume and no NAT gateway', () => {
+  it('runs a t2.micro (account vCPU quota) with an encrypted gp3 volume and no NAT gateway', () => {
     edgeHost.hasResourceProperties('AWS::EC2::Instance', {
-      InstanceType: 't3.small',
+      InstanceType: 't2.micro',
       BlockDeviceMappings: [
         Match.objectLike({ Ebs: Match.objectLike({ Encrypted: true, VolumeType: 'gp3' }) }),
       ],
@@ -417,23 +422,37 @@ describe('EtpEdgeHost (FR-EDGE-6)', () => {
     edgeHost.resourceCountIs('AWS::EC2::NatGateway', 0);
   });
 
-  it('verifies and installs the pinned nucleus with automatic provisioning into the group', () => {
+  it('verifies and installs the pinned nucleus with manual provisioning into the group', () => {
     const userData = JSON.stringify(
       resources(edgeHost, 'AWS::EC2::Instance')[0]?.Properties.UserData,
     );
     expect(userData).toContain(`greengrass-${GREENGRASS_VERSIONS.nucleus}.zip`);
     expect(userData).toContain('jarsigner -verify');
+    expect(userData).toContain('create-keys-and-certificate --set-as-active');
     expect(userData).toContain(`--thing-group-name ${EDGE.thingGroup}`);
-    expect(userData).toContain('--provision true');
+    expect(userData).toContain('--init-config /tmp/GreengrassInstaller/config.yaml');
+    expect(userData).not.toContain('--provision true');
+    expect(userData).toContain('sha256sum --check --strict');
     expect(userData).toContain('usermod -aG docker ggc_user');
+    expect(userData).toContain('mkswap /swapfile');
   });
 
-  it('scopes installer permissions to the named thing, group, and role', () => {
-    const json = JSON.stringify(resources(edgeHost, 'AWS::IAM::Policy'));
+  it('gives the host IoT provisioning rights for the named thing only, and no IAM rights', () => {
+    const statements = resources(edgeHost, 'AWS::IAM::Policy').flatMap(
+      (p) =>
+        (
+          p.Properties.PolicyDocument as {
+            Statement: { Sid?: string; Action: unknown; Resource: unknown }[];
+          }
+        ).Statement,
+    );
+    const json = JSON.stringify(statements);
+    expect(json).not.toMatch(/"iam:/);
     expect(json).toContain(`thing/${EDGE.coreThingName}`);
-    expect(json).toContain(`role/${EDGE.tesRole}`);
-    expect(json).not.toContain('iam:CreateRole');
-    expect(json).not.toContain('iot:CreateThingGroup');
+    expect(json).toContain(`policy/${EDGE.corePolicy}`);
+    // AttachThingPrincipal is authorized against the new certificate too (found on first deploy).
+    const provision = statements.find((st) => st.Sid === 'ProvisionCoreThing');
+    expect(JSON.stringify(provision?.Resource)).toContain(':cert/*');
   });
 });
 

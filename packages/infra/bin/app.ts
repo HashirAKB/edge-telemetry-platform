@@ -10,9 +10,11 @@ import { PROJECT_TAGS } from '../src/tags.js';
 const app = new App();
 
 // Account is resolved from the CLI credentials at deploy time; synth (and CI) needs none.
+// The region is pinned (SRS 0.3), not taken from CDK_DEFAULT_REGION: that comes from whichever
+// AWS profile is active and silently falls back to us-east-1, which would deploy elsewhere.
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 const env = {
-  region: process.env.CDK_DEFAULT_REGION ?? 'ap-south-1',
+  region: String(app.node.tryGetContext('region') ?? 'ap-south-1'),
   ...(account ? { account } : {}),
 };
 const common = { env, tags: { ...PROJECT_TAGS } };
@@ -31,9 +33,16 @@ new IngestStack(app, 'EtpIngest', {
 const buildVersion = String(app.node.tryGetContext('buildVersion') ?? 'dev');
 new ApiStack(app, 'EtpApi', { ...common, buildVersion });
 
-// Greengrass edge (SRS 6.2). The image tag comes from scripts/publish-simulator-image.ts;
-// "unpublished" lets CI synthesize without one (a deploy with it would fail on the device).
-const imageTag = String(app.node.tryGetContext('simulatorImageTag') ?? 'unpublished');
+// Greengrass edge (SRS 6.2). The image tag comes from scripts/publish-simulator-image.ts.
+// Credential-free synth (CI) may use a placeholder; with real credentials (deploy, diff) a missing
+// tag is an error, because a component pointing at a missing image only fails later, on the device.
+const contextTag = app.node.tryGetContext('simulatorImageTag') as string | undefined;
+if (!contextTag && account) {
+  throw new Error(
+    'Pass the simulator image tag: -c simulatorImageTag=<tag> (see pnpm edge:publish-image)',
+  );
+}
+const imageTag = contextTag ?? 'unpublished';
 const edge = new EdgeStack(app, 'EtpEdge', {
   ...common,
   repository: foundation.simulatorRepository,
@@ -42,6 +51,7 @@ const edge = new EdgeStack(app, 'EtpEdge', {
 
 // FR-EDGE-6: the EC2 core host exists only when asked for, so it can be destroyed after demos.
 if (String(app.node.tryGetContext('edgeHost')) === 'ec2') {
-  const host = new EdgeHostStack(app, 'EtpEdgeHost', common);
+  const availabilityZone = String(app.node.tryGetContext('edgeAz') ?? 'ap-south-1b');
+  const host = new EdgeHostStack(app, 'EtpEdgeHost', { ...common, availabilityZone });
   host.addStackDependency(edge);
 }

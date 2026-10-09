@@ -108,7 +108,8 @@ console.log(
 const log = await runOnInstance(
   region,
   instanceId,
-  'grep -hE "buffer full|dropped|failed to start" /greengrass/v2/logs/com.hashirakb.etp.SensorSimulator.log | tail -5 || true',
+  // Match real problems only: the graceful-shutdown summary always contains "dropped":0.
+  'grep -hE \'buffer full|"dropped":[1-9]|"unsent":[1-9]|failed to start\' /greengrass/v2/logs/com.hashirakb.etp.SensorSimulator.log | tail -5 || true',
   60,
 );
 console.log(`component log drops/failures: ${log.trim() === '' ? 'none' : `\n${log}`}`);

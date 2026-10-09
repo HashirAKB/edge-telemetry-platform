@@ -29,7 +29,9 @@ export const GREENGRASS_VERSIONS = {
   tokenExchangeService: '2.0.3',
 } as const;
 
-/** MQTT spool on disk (ADR 0005): ~3 h of default traffic; when full, new messages are rejected. */
+export const NUCLEUS_JVM_OPTIONS = '-Xmx256m -Xms64m';
+
+/** MQTT spool on disk (ADR 0005): ~7 h of default traffic; when full, new messages are rejected. */
 export const SPOOLER_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface EdgeStackProps extends StackProps {
@@ -137,7 +139,8 @@ export class EdgeStack extends Stack {
     const fingerprint = createHash('sha256')
       .update(JSON.stringify(build('0.0.0', `etp/simulator:${props.imageTag}`)))
       .digest('hex');
-    this.componentVersion = `1.0.${String(parseInt(fingerprint.slice(0, 7), 16))}`;
+    // Greengrass caps each version number at 999999 (recipe reference), hence the modulo.
+    this.componentVersion = `1.0.${String(parseInt(fingerprint.slice(0, 8), 16) % 1_000_000)}`;
     this.recipe = build(this.componentVersion, image);
 
     const component = new greengrass.CfnComponentVersion(this, 'SimulatorComponent', {
@@ -152,6 +155,8 @@ export class EdgeStack extends Stack {
           componentVersion: GREENGRASS_VERSIONS.nucleus,
           configurationUpdate: {
             merge: JSON.stringify({
+              // Bound the nucleus heap on the 1 GiB edge host (ADR 0014).
+              jvmOptions: NUCLEUS_JVM_OPTIONS,
               mqtt: {
                 spooler: {
                   storageType: 'Disk',
