@@ -141,3 +141,38 @@ IoT rule write failures to SiteWise per rule (the `AWS/IoT` `Failure` metric wit
 
 **Q: How is cost controlled?**
 An AWS Budgets budget of USD 10 a month in CDK emails at 50, 80, and 100 percent of actual spend and 100 percent of forecast. `docs/cost.md` breaks down every running cost from the Mumbai price list. The main levers are on-demand operation (no EC2 or telemetry when idle), the sampling interval (SiteWise bills each value), and keeping the monitor off between demos. Idle cost is about USD 1.60 a month, almost all alarms.
+
+## Phase 8: Cross-cutting topics
+
+**Q: Walk me through the IoT rule SQL and the substitution templates.**
+There is one rule per machine type, and its SQL is just `SELECT * FROM 'telemetry/v1/+/+/pump/+'` (SQL version 2016-03-23). The work happens in the SiteWise action, whose fields are substitution templates evaluated per message. The property alias is `/${topic(3)}/${topic(4)}/${topic(6)}/temperature_c`, rebuilt from the topic segments for site, line, and machine. The value is `${metrics.temperature_c}`. The timestamp is `${floor(ts / 1E3)}` seconds plus `${(ts % 1E3) * 1E6}` nanoseconds, because the device sends epoch milliseconds and SiteWise wants seconds plus nanos. Each message becomes 5 entries in one `BatchPutAssetPropertyValue` call. I kept the SQL as `SELECT *` on purpose: the payload is validated on the device, and filtering in SQL would hide a contract problem instead of surfacing it. The templates are generated from the same functions as the infrastructure aliases, and a unit test checks they match.
+
+**Q: What does the error action do, and why does it matter?**
+If a rule action fails (IAM denied, an alias that does not exist, a timestamp outside the window), IoT Core runs the error action, which writes the failing payload and the reason to the `/etp/iot/rule-errors` log group. Without it a failed write is invisible: the device got its PUBACK, so from the edge everything looks fine. The error log is how I found the IAM problem in Phase 4 in minutes. The same failures are counted in the `AWS/IoT` `Failure` metric, which has an alarm per rule.
+
+**Q: Why rules instead of the edge calling SiteWise directly with the SDK?**
+Four reasons. The device stays protocol-simple: it speaks MQTT and knows nothing about SiteWise, so the cloud model can change without touching devices. Routing and mapping live in the platform, so one rule change covers every device of a type. Failures are observable in one place (the error action and metric) instead of in thousands of device logs. And the device needs no IAM permissions for SiteWise, only an IoT policy for its own topics. The trade-off is per-message cost and one message per sample; at high volume, Greengrass Stream Manager exporting batches straight to SiteWise is the better path (stretch goal S3).
+
+**Q: What about Lambda cold starts? Why ARM64?**
+The Lambdas run Node.js 24 on ARM64 (Graviton), which AWS prices about 20 percent lower per GB-second than x86 for the same memory, and this code has no native dependencies that would need an x86 build. Measured from the `REPORT` lines over the last week: init takes 330 to 410 ms, about 3.5 percent of invocations were cold, and memory use is about 143 MB of the 256 MB configured. What keeps it there: esbuild bundles and minifies each handler into one file, clients and the Powertools objects are created once at module scope and reused across warm invocations, and the asset tree is cached in memory for 5 minutes, so a warm tree call is under 2 ms of Lambda time. I bundle the AWS SDK instead of using the runtime's copy (ADR 0007), which costs a little init time and buys exact version control. If cold starts mattered for a user-facing path, I would add provisioned concurrency on that one function rather than to everything.
+
+**Q: Give me concrete least-privilege examples from this repo.**
+
+- The IoT rule role can call only `BatchPutAssetPropertyValue`, only on data streams whose alias starts with `/kochi-01/` and on the 5 machine assets by ARN. It cannot write to the line or site assets.
+- The core's IoT policy names its own thing: it can connect only as that client ID and publish telemetry only under `telemetry/v1/`.
+- The container gets IPC permission for `PublishToIoTCore` on `telemetry/v1/#` and nothing else, and has no certificate or AWS keys.
+- The token exchange role can pull from one ECR repository.
+- The EC2 instance role has 5 IoT actions scoped to named resources and no IAM actions at all, which is why I switched to manual provisioning (ADR 0014).
+- The API Lambdas are read-only on SiteWise; the freshness monitor can read only `DescribeAsset` and `BatchGetAssetPropertyValue`.
+- The SNS topic accepts publishes from CloudWatch only for this account's `etp-` alarms.
+- The IoT rule roles trust `iot.amazonaws.com` only with an `aws:SourceAccount` condition, against the confused-deputy problem.
+- CI checks with `cdk synth` and assertion tests that no statement has `Action: "*"`, and a script tests that the denials actually deny.
+
+**Q: The SiteWise 7-day limit: what does it mean for how long a site can be offline?**
+SiteWise rejects values older than 7 days, so data buffered longer than that is lost no matter what the edge does. In practice the spool runs out first: it is set to 10 MB, and at about 240 bytes per message and 3,600 messages an hour that is roughly 10 hours. For a site that can be offline for days I would raise the spool size to match the outage I must survive, sample less often while offline, or keep raw data locally and backfill to S3, which has no age limit, then load it separately.
+
+**Q: How does this map to platform work at a company like Experion?**
+The job description talks about platform APIs, reusable services, and data planes for telemetry-driven products. That is this repo's shape. The edge, ingest, and model are a shared capability that one platform team owns. Application teams get a typed, versioned API and an OpenAPI file, and never touch MQTT topics, certificates, or SiteWise IDs. Adding a machine or a line is a config change that flows to assets, rules, aliases, and the simulator. The operational side (freshness alarms, error actions, budgets, a runbook, a teardown) is what lets other teams depend on it. A real product would add multi-tenancy (a site per customer with scoped auth), real protocols at the edge (OPC UA through SiteWise Edge or a Greengrass connector), and a typed client package generated from the same schemas.
+
+**Q: What is not real in this project?**
+The sensors are simulated: a TypeScript process generates realistic signals with drift, noise, load cycles, and injectable faults. Everything from the Greengrass core onwards is real AWS: a real core device on EC2, real MQTT over TLS, real rules, SiteWise models, Lambdas, alarms, and emails. There is no OPC UA, no plant network, and the API uses API keys rather than per-user identity. I say so in the README rather than let anyone assume otherwise.

@@ -20,7 +20,7 @@ export const EDGE = {
 
 /**
  * Public component versions, pinned so a redeploy never pulls an unexpected nucleus update
- * (Greengrass docs recommend pinning). Checked against ap-south-1 on 2026-10-10.
+ * (Greengrass docs recommend pinning). Checked against ap-south-1 on 2026-10-09.
  */
 export const GREENGRASS_VERSIONS = {
   nucleus: '2.18.3',

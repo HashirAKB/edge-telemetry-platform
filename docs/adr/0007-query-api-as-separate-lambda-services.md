@@ -1,7 +1,7 @@
 # ADR 0007: Query API as two Lambda services behind one REST API
 
 - Status: Accepted
-- Date: 2026-10-10
+- Date: 2026-10-09
 
 ## Context
 

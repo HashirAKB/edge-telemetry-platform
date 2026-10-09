@@ -1,7 +1,7 @@
 # ADR 0014: Edge host on t2.micro with manual Greengrass provisioning
 
 - Status: Accepted
-- Date: 2026-10-10
+- Date: 2026-10-09
 
 ## Context
 

@@ -1,7 +1,7 @@
 # ADR 0008: API keys and a usage plan for authentication and throttling
 
 - Status: Accepted
-- Date: 2026-10-10
+- Date: 2026-10-09
 
 ## Context
 

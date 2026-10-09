@@ -44,6 +44,20 @@ Metrics add a few computations per machine per window (negligible next to the ab
 
 **The platform is meant to run on demand.** NFR-5 asks for under $10 per month while running; at the default 5 second interval that holds for demo sessions (about 3 cents an hour), not for 24/7 operation. Run it for demos and stop the publisher afterwards, or deploy the edge with a 30 second interval if it must stay on.
 
+## Edge host (EtpEdgeHost)
+
+The Greengrass core runs on an EC2 `t2.micro` (ADR 0014) that exists only while `EtpEdgeHost` is deployed. Mumbai list prices, 2026-10-09:
+
+| Item                         | Price                              | Per hour running                      |
+| ---------------------------- | ---------------------------------- | ------------------------------------- |
+| `t2.micro` on demand (Linux) | $0.0124 per hour                   | $0.0124                               |
+| Public IPv4 address          | $0.005 per hour                    | $0.005                                |
+| 16 GB gp3 root volume        | $0.0912 per GB-month               | about $0.002                          |
+| Greengrass core device       | $0.18 per active core device-month | a flat $0.18 a month while it reports |
+| **Host total**               |                                    | **about $0.02**                       |
+
+Together with the telemetry above, a demo session costs about **5 cents an hour** while the edge runs. Left on 24/7, the host alone is about $14 a month, plus the telemetry, which is why the host is destroyed after demos and redeployed in about 5 minutes. The free tier may cover the instance hours on a new account; the figures above assume it does not. The host has a public IPv4 address only so that it can reach AWS without a NAT gateway (about $0.06 an hour in Mumbai); it accepts no inbound traffic.
+
 ## Idle cost
 
 With nothing publishing, the deployed stacks cost close to nothing:
@@ -52,14 +66,14 @@ With nothing publishing, the deployed stacks cost close to nothing:
 | --------------------------------------- | --------------------------------------------------------- |
 | SiteWise asset models and assets        | none                                                      |
 | IoT topic rules, IAM roles, SNS topic   | none                                                      |
-| ECR repository (empty until Phase 6)    | storage only, cents per month                             |
+| ECR repository (at most 5 images)       | storage only, cents per month                             |
 | CloudWatch log group (14 day retention) | storage only, cents per month                             |
 | SiteWise stored data                    | $0.013 per GB-day; a 10 minute run stores well under 1 MB |
 | CDK bootstrap bucket and repository     | storage only, cents per month                             |
 
 ## Monitoring cost
 
-Mumbai list prices (2026-10-10): custom metrics USD 0.30 per metric-month (billed by the hour, only while data arrives), standard alarms USD 0.10 per alarm-month, composite alarms USD 0.50 per month, the first three dashboards free.
+Mumbai list prices (2026-10-09): custom metrics USD 0.30 per metric-month (billed by the hour, only while data arrives), standard alarms USD 0.10 per alarm-month, composite alarms USD 0.50 per month, the first three dashboards free.
 
 | Item                                                                     | Always deployed              | Cost per month                      |
 | ------------------------------------------------------------------------ | ---------------------------- | ----------------------------------- |
@@ -74,4 +88,4 @@ The freshness schedule is **off by default**. An always-on monitor on an on-dema
 
 - `etp-monthly`: a USD 10 monthly AWS Budgets budget in CDK (FR-OBS-5) that emails at 50, 80, and 100 percent of actual spend and 100 percent of forecast.
 - An AWS zero-spend budget, set up by hand in the console earlier. It emails on the first cent of spend.
-- `pnpm teardown` (Phase 8) removes every billable resource (NFR-8).
+- `pnpm teardown` removes every billable resource in dependency order after you type the account ID, and lists what is left (NFR-8). `pnpm teardown --dry-run` shows the plan without changing anything.

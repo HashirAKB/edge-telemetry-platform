@@ -1,7 +1,7 @@
 # ADR 0005: Offline buffering with the Greengrass disk spooler and QoS 1
 
 - Status: Accepted
-- Date: 2026-10-10
+- Date: 2026-10-09
 
 ## Context
 

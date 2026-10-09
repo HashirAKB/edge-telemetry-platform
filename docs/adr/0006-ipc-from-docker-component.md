@@ -1,7 +1,7 @@
 # ADR 0006: Simulator as a Docker component using Greengrass IPC
 
 - Status: Accepted
-- Date: 2026-10-10
+- Date: 2026-10-09
 
 ## Context
 
