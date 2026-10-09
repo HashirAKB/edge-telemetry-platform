@@ -4,6 +4,7 @@ import {
   BATCH_GET_MAX_ENTRIES,
   SdkSiteWiseReader,
   toTqv,
+  wholeSeconds,
   type CommandSender,
 } from './sitewise/sdk-reader.js';
 
@@ -268,6 +269,30 @@ describe('SdkSiteWiseReader', () => {
       value: null,
       timestampMs: 0,
       quality: 'GOOD',
+    });
+  });
+
+  it('sends whole-second dates, widening the range outward (SiteWise rejects milliseconds)', async () => {
+    const { client, calls } = fakeClient({
+      GetAssetPropertyValueHistoryCommand: () => ({}),
+      GetAssetPropertyAggregatesCommand: () => ({}),
+    });
+    const reader = new SdkSiteWiseReader(client);
+    const window = {
+      assetId: 'a',
+      propertyId: 'p',
+      from: new Date('2026-10-09T05:14:45.219Z'),
+      to: new Date('2026-10-09T05:44:45.219Z'),
+    };
+    await reader.history({ ...window, limit: 10 });
+    await reader.aggregates({ ...window, resolution: '1m', types: ['AVERAGE'] });
+    for (const call of calls) {
+      expect(call.input.startDate).toEqual(new Date('2026-10-09T05:14:45.000Z'));
+      expect(call.input.endDate).toEqual(new Date('2026-10-09T05:44:46.000Z'));
+    }
+    expect(wholeSeconds({ from: new Date(3000), to: new Date(5000) })).toEqual({
+      startDate: new Date(3000),
+      endDate: new Date(5000),
     });
   });
 });

@@ -44,6 +44,18 @@ const AGGREGATE_FIELDS: Record<string, AggregateType> = {
   sum: 'SUM',
 };
 
+/**
+ * SiteWise rejects dates with sub-second precision ("The date can only be in seconds", found
+ * against the live API). Its start date is exclusive and its end date inclusive, so rounding
+ * start down and end up never drops a value inside the requested range.
+ */
+export function wholeSeconds(range: { from: Date; to: Date }): { startDate: Date; endDate: Date } {
+  return {
+    startDate: new Date(Math.floor(range.from.getTime() / 1000) * 1000),
+    endDate: new Date(Math.ceil(range.to.getTime() / 1000) * 1000),
+  };
+}
+
 export function toTqv(v: AssetPropertyValue): Tqv {
   const raw = v.value;
   const value =
@@ -165,8 +177,7 @@ export class SdkSiteWiseReader implements SiteWiseReader {
       new GetAssetPropertyValueHistoryCommand({
         assetId: q.assetId,
         propertyId: q.propertyId,
-        startDate: q.from,
-        endDate: q.to,
+        ...wholeSeconds(q),
         maxResults: q.limit,
         nextToken: q.nextToken,
         timeOrdering: 'ASCENDING',
@@ -184,8 +195,7 @@ export class SdkSiteWiseReader implements SiteWiseReader {
         new GetAssetPropertyAggregatesCommand({
           assetId: q.assetId,
           propertyId: q.propertyId,
-          startDate: q.from,
-          endDate: q.to,
+          ...wholeSeconds(q),
           resolution: q.resolution,
           aggregateTypes: [...q.types],
           maxResults: AGGREGATES_MAX_RESULTS,

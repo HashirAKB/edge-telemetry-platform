@@ -113,34 +113,46 @@ check(
   'pump-01 latest values are fresh',
   `newest ${latest.body.newestMeasurementAt ?? 'none'}`,
 );
-const value = (name: string) => latest.body.values.find((v) => v.name === name);
-const c = value('temperature_c');
-const f = value('temperature_f');
-const consistent =
-  typeof c?.value === 'number' &&
-  typeof f?.value === 'number' &&
-  c.timestamp === f.timestamp &&
-  Math.abs(c.value * 1.8 + 32 - f.value) < 0.01;
+// A transform lands a few seconds after its input, so compare values at the same timestamp.
+interface HistoryBody {
+  values?: { timestamp: string; value: unknown }[];
+}
+const historyOf = (name: string) =>
+  get<HistoryBody>(
+    `/v1/assets/${pump.assetId}/properties/${propertyId(name)}/history?from=${minutesAgo(2)}&to=${now()}&limit=100`,
+  );
+const [celsius, fahrenheit] = await Promise.all([
+  historyOf('temperature_c'),
+  historyOf('temperature_f'),
+]);
+const fByTime = new Map((fahrenheit.body.values ?? []).map((v) => [v.timestamp, v.value]));
+const pairs = (celsius.body.values ?? [])
+  .filter((v) => fByTime.has(v.timestamp))
+  .map((v) => [Number(v.value), Number(fByTime.get(v.timestamp))] as const);
+const mismatched = pairs.filter(([c, f]) => Math.abs(c * 1.8 + 32 - f) >= 0.01);
 check(
-  consistent,
-  'temperature_f matches temperature_c',
-  `${String(c?.value)} C -> ${String(f?.value)} F`,
+  pairs.length > 0 && mismatched.length === 0,
+  'temperature_f equals temperature_c * 9/5 + 32 at every shared timestamp',
+  `${String(pairs.length)} pairs, ${String(mismatched.length)} mismatched`,
 );
 
 // --- Aggregates (13.1 step 3) -----------------------------------------------------------
 const aggs = await get<AggregatesResponse>(
   `/v1/assets/${pump.assetId}/properties/${propertyId('temperature_c')}/aggregates?from=${minutesAgo(30)}&to=${now()}&resolution=1m&types=AVERAGE,MAXIMUM`,
 );
-const points = aggs.body.points.length;
+const points = aggs.status === 200 ? aggs.body.points : [];
 check(
-  aggs.status === 200 && points >= MIN_POINTS,
+  aggs.status === 200 && points.length >= MIN_POINTS,
   `1m aggregates over 30 min (need >= ${String(MIN_POINTS)})`,
-  `${String(points)} points`,
+  aggs.status === 200
+    ? `${String(points.length)} points`
+    : `HTTP ${String(aggs.status)} ${JSON.stringify(aggs.body).slice(0, 300)}`,
 );
 check(
-  aggs.body.points.every(
-    (p) => typeof p.values.AVERAGE === 'number' && typeof p.values.MAXIMUM === 'number',
-  ),
+  points.length > 0 &&
+    points.every(
+      (p) => typeof p.values.AVERAGE === 'number' && typeof p.values.MAXIMUM === 'number',
+    ),
   'each point has AVERAGE and MAXIMUM',
 );
 
