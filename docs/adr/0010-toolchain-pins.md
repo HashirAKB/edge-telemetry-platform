@@ -20,4 +20,8 @@ SRS section 8 asks for current stable versions, pinned, and checked before adopt
 
 - Upgrading to TypeScript 7 is a tracked follow-up, gated on `typescript-eslint`.
 - `packages/infra/cdk.json` is excluded from Prettier because `cdk flags` rewrites it in its own format.
-- Two flags (`defaultCrossStackReferences`, `target-partitions`) have no recommended value to apply and are left at their defaults.
+- `target-partitions` has no recommended value and stays at its default. `defaultCrossStackReferences` was later set explicitly to `strong` (ADR 0012).
+
+## Addendum (2026-10-10): `exactOptionalPropertyTypes` is off in `packages/infra` only
+
+The AWS CDK type definitions are not written for `exactOptionalPropertyTypes` (for example, `Vpc` is not assignable to `IVpc` because `vpnGatewayId` is `string | undefined` on one and `string` on the other). Rather than cast at every call site, the option is disabled for the infra package only; every other package keeps it.

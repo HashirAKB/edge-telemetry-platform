@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "noEmit": true
+    "noEmit": true,
+    "exactOptionalPropertyTypes": false
   },
   "include": ["bin", "src", "test"]
 }

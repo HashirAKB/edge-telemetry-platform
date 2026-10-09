@@ -19,6 +19,8 @@ export interface MachineOptions {
   readonly startedAtMs: number;
   readonly faults?: readonly FaultSpec[];
   readonly idleWindows?: readonly Window[];
+  /** Continue numbering from here, so a reconfiguration does not look like lost messages. */
+  readonly initialSeq?: number;
 }
 
 export interface Sample {
@@ -32,10 +34,11 @@ export class MachineSimulator {
   private readonly load: LoadModel;
   private readonly signals: { name: string; model: SignalModel }[];
   private readonly faults: FaultEngine;
-  private seq = 0;
+  private seq: number;
 
   constructor(private readonly options: MachineOptions) {
     const { machine, seed } = options;
+    this.seq = options.initialSeq ?? 0;
     this.topic = topicFor(machine);
     // Independent streams per machine and per signal: adding a machine or a measurement
     // does not change the series of the others.
@@ -47,6 +50,11 @@ export class MachineSimulator {
       model: new SignalModel(m.signal, new Rng(hashSeed(seed, machine.machineId, m.name))),
     }));
     this.faults = new FaultEngine(options.faults ?? []);
+  }
+
+  /** The `seq` the next emitted message will carry. */
+  get nextSeq(): number {
+    return this.seq;
   }
 
   get machineId(): string {

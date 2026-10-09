@@ -27,7 +27,12 @@
     "device:check-policy": "pnpm -F @etp/scripts run device:check-policy",
     "check:ingest": "pnpm -F @etp/scripts run check:ingest",
     "openapi": "pnpm -F @etp/scripts run openapi",
-    "openapi:check": "pnpm -F @etp/scripts run openapi:check"
+    "openapi:check": "pnpm -F @etp/scripts run openapi:check",
+    "edge:publish-image": "pnpm -F @etp/scripts run edge:publish-image",
+    "edge:status": "pnpm -F @etp/scripts run edge:status",
+    "edge:outage-test": "pnpm -F @etp/scripts run edge:outage-test",
+    "edge:fault": "pnpm -F @etp/scripts run edge:fault",
+    "edge:deprovision": "pnpm -F @etp/scripts run edge:deprovision"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

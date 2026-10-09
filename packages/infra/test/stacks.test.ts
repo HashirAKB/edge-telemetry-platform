@@ -5,6 +5,14 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { aliasFor, listMachines, measurementNamesFor, topology, type Topology } from '@etp/shared';
 import { ApiStack, USAGE_PLAN } from '../src/stacks/api-stack.js';
+import { EdgeHostStack } from '../src/stacks/edge-host-stack.js';
+import {
+  EDGE,
+  EdgeStack,
+  GREENGRASS_VERSIONS,
+  SPOOLER_MAX_BYTES,
+  simulatorRecipe,
+} from '../src/stacks/edge-stack.js';
 import { FoundationStack, RULE_ERRORS_LOG_GROUP } from '../src/stacks/foundation-stack.js';
 import { IngestStack, ruleNameFor } from '../src/stacks/ingest-stack.js';
 import { SiteWiseStack } from '../src/stacks/sitewise-stack.js';
@@ -15,7 +23,7 @@ interface Resource {
   Properties: Record<string, unknown>;
 }
 
-function synth(options: { plant?: Topology; rawArchive?: boolean } = {}) {
+function synth(options: { plant?: Topology; rawArchive?: boolean; imageTag?: string } = {}) {
   const app = new App();
   const common = { tags: { ...PROJECT_TAGS } };
   const foundation = new FoundationStack(app, 'Foundation', common);
@@ -30,6 +38,12 @@ function synth(options: { plant?: Topology; rawArchive?: boolean } = {}) {
     rawArchive: options.rawArchive ?? false,
   });
   const api = new ApiStack(app, 'Api', { ...common, buildVersion: 'test' });
+  const edge = new EdgeStack(app, 'Edge', {
+    ...common,
+    repository: foundation.simulatorRepository,
+    imageTag: options.imageTag ?? 'abc1234',
+  });
+  const edgeHost = new EdgeHostStack(app, 'EdgeHost', common);
   const template = (stack: Stack) => Template.fromStack(stack);
   return {
     app,
@@ -37,6 +51,9 @@ function synth(options: { plant?: Topology; rawArchive?: boolean } = {}) {
     sitewise: template(sitewise),
     ingest: template(ingest),
     api: template(api),
+    edge: template(edge),
+    edgeHost: template(edgeHost),
+    componentVersion: edge.componentVersion,
   };
 }
 
@@ -44,7 +61,7 @@ function resources(template: Template, type: string): Resource[] {
   return Object.values(template.findResources(type)) as Resource[];
 }
 
-const { app, foundation, sitewise, ingest, api } = synth();
+const { app, foundation, sitewise, ingest, api, edge, edgeHost, componentVersion } = synth();
 
 describe('EtpSiteWise (FR-SW-1, FR-SW-2)', () => {
   it('creates the four asset models', () => {
@@ -281,8 +298,147 @@ describe('EtpApi (SRS 6.5)', () => {
   });
 });
 
+describe('EtpEdge (SRS 6.2)', () => {
+  const recipe = simulatorRecipe(
+    '1.0.1',
+    'acct.dkr.ecr.ap-south-1.amazonaws.com/etp/simulator:abc',
+    5000,
+  );
+  const run = JSON.stringify(recipe);
+
+  it('mounts the IPC socket and passes SVCUID into the container (FR-EDGE-3)', () => {
+    expect(run).toContain(
+      '-v $AWS_GG_NUCLEUS_DOMAIN_SOCKET_FILEPATH_FOR_COMPONENT:$AWS_GG_NUCLEUS_DOMAIN_SOCKET_FILEPATH_FOR_COMPONENT',
+    );
+    expect(run).toContain('-e SVCUID -e AWS_GG_NUCLEUS_DOMAIN_SOCKET_FILEPATH_FOR_COMPONENT');
+    expect(run).toContain('-e TRANSPORT=ipc');
+    expect(run).toContain(`docker stop --time 10 ${EDGE.container}`);
+  });
+
+  it('lets the component publish to telemetry/v1/# only', () => {
+    const config = recipe.ComponentConfiguration as {
+      DefaultConfiguration: {
+        accessControl: Record<
+          string,
+          Record<string, { operations: string[]; resources: string[] }>
+        >;
+      };
+    };
+    const policies = Object.values(
+      config.DefaultConfiguration.accessControl['aws.greengrass.ipc.mqttproxy'] ?? {},
+    );
+    expect(policies).toEqual([
+      expect.objectContaining({
+        operations: ['aws.greengrass#PublishToIoTCore'],
+        resources: ['telemetry/v1/#'],
+      }),
+    ]);
+  });
+
+  it('pulls the image from the private ECR repo by immutable tag, via DockerApplicationManager and TES', () => {
+    expect(JSON.stringify(recipe.Manifests)).toContain(
+      '"URI":"docker:acct.dkr.ecr.ap-south-1.amazonaws.com/etp/simulator:abc"',
+    );
+    expect(Object.keys(recipe.ComponentDependencies as object)).toEqual([
+      'aws.greengrass.DockerApplicationManager',
+      'aws.greengrass.TokenExchangeService',
+    ]);
+  });
+
+  it('derives a new component version when the image tag changes, and keeps it otherwise', () => {
+    expect(componentVersion).toMatch(/^1\.0\.\d+$/);
+    expect(synth({ imageTag: 'abc1234' }).componentVersion).toBe(componentVersion);
+    expect(synth({ imageTag: 'def5678' }).componentVersion).not.toBe(componentVersion);
+  });
+
+  it('deploys pinned versions with the MQTT spooler on disk (FR-EDGE-2, ADR 0005)', () => {
+    const deployment = resources(edge, 'AWS::GreengrassV2::Deployment')[0];
+    const components = deployment?.Properties.Components as Record<
+      string,
+      { ComponentVersion: string; ConfigurationUpdate?: { Merge: string } }
+    >;
+    expect(components['aws.greengrass.Nucleus']?.ComponentVersion).toBe(
+      GREENGRASS_VERSIONS.nucleus,
+    );
+    expect(components['aws.greengrass.DiskSpooler']?.ComponentVersion).toBe(
+      GREENGRASS_VERSIONS.diskSpooler,
+    );
+    expect(
+      JSON.parse(components['aws.greengrass.Nucleus']?.ConfigurationUpdate?.Merge ?? '{}'),
+    ).toEqual({
+      mqtt: {
+        spooler: {
+          storageType: 'Disk',
+          pluginName: 'aws.greengrass.DiskSpooler',
+          maxSizeInBytes: SPOOLER_MAX_BYTES,
+          keepQos0WhenOffline: false,
+        },
+      },
+    });
+    expect(Object.keys(components)).toContain(EDGE.component);
+  });
+
+  it('lets the token exchange role pull this repository only', () => {
+    const json = JSON.stringify(resources(edge, 'AWS::IAM::Policy'));
+    expect(json).toContain('ecr:BatchGetImage');
+    expect(json).not.toMatch(
+      /ecr:(Put|Delete|Create|Batch(Delete|Check)|Initiate|Upload|Complete)/,
+    );
+  });
+
+  it('gives the core device a policy that names the thing and limits publishing', () => {
+    const doc = JSON.stringify(resources(edge, 'AWS::IoT::Policy')[0]?.Properties.PolicyDocument);
+    expect(doc).toContain(`client/${EDGE.coreThingName}*`);
+    expect(doc).toContain('topic/telemetry/v1/*');
+    expect(doc).not.toContain('iot:*');
+    expect(doc).not.toContain('greengrass:*');
+    expect(doc).not.toContain('iot:Connection.Thing');
+  });
+});
+
+describe('EtpEdgeHost (FR-EDGE-6)', () => {
+  it('opens no inbound ports and requires IMDSv2', () => {
+    for (const sg of resources(edgeHost, 'AWS::EC2::SecurityGroup')) {
+      expect(sg.Properties.SecurityGroupIngress).toBeUndefined();
+    }
+    edgeHost.resourceCountIs('AWS::EC2::SecurityGroupIngress', 0);
+    edgeHost.hasResourceProperties('AWS::EC2::LaunchTemplate', {
+      LaunchTemplateData: { MetadataOptions: { HttpTokens: 'required' } },
+    });
+  });
+
+  it('runs a t3.small with an encrypted gp3 volume and no NAT gateway', () => {
+    edgeHost.hasResourceProperties('AWS::EC2::Instance', {
+      InstanceType: 't3.small',
+      BlockDeviceMappings: [
+        Match.objectLike({ Ebs: Match.objectLike({ Encrypted: true, VolumeType: 'gp3' }) }),
+      ],
+    });
+    edgeHost.resourceCountIs('AWS::EC2::NatGateway', 0);
+  });
+
+  it('verifies and installs the pinned nucleus with automatic provisioning into the group', () => {
+    const userData = JSON.stringify(
+      resources(edgeHost, 'AWS::EC2::Instance')[0]?.Properties.UserData,
+    );
+    expect(userData).toContain(`greengrass-${GREENGRASS_VERSIONS.nucleus}.zip`);
+    expect(userData).toContain('jarsigner -verify');
+    expect(userData).toContain(`--thing-group-name ${EDGE.thingGroup}`);
+    expect(userData).toContain('--provision true');
+    expect(userData).toContain('usermod -aG docker ggc_user');
+  });
+
+  it('scopes installer permissions to the named thing, group, and role', () => {
+    const json = JSON.stringify(resources(edgeHost, 'AWS::IAM::Policy'));
+    expect(json).toContain(`thing/${EDGE.coreThingName}`);
+    expect(json).toContain(`role/${EDGE.tesRole}`);
+    expect(json).not.toContain('iam:CreateRole');
+    expect(json).not.toContain('iot:CreateThingGroup');
+  });
+});
+
 describe('security and hygiene across all stacks (NFR-4, NFR-8)', () => {
-  const templates = { foundation, sitewise, ingest, api };
+  const templates = { foundation, sitewise, ingest, api, edge, edgeHost };
 
   it('has no IAM statement with a wildcard action', () => {
     for (const [name, t] of Object.entries(templates)) {
@@ -300,7 +456,7 @@ describe('security and hygiene across all stacks (NFR-4, NFR-8)', () => {
 
   it('tags every stack with the project tags', () => {
     const assembly = app.synth();
-    for (const id of ['Foundation', 'SiteWise', 'Ingest', 'Api']) {
+    for (const id of ['Foundation', 'SiteWise', 'Ingest', 'Api', 'Edge', 'EdgeHost']) {
       expect(assembly.getStackByName(id).tags).toEqual(PROJECT_TAGS);
     }
   });

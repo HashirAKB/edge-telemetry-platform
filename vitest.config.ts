@@ -36,12 +36,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
-      // Lambda entry points and Powertools wiring are exercised by the deployed smoke test.
+      // Process and Lambda entry points are exercised end to end instead: the API by the
+      // deployed smoke test, the simulator by the container smoke test in CI and on Greengrass.
       exclude: [
         '**/*.test.ts',
         '**/test-helpers.ts',
         'packages/api/src/handlers/**',
         'packages/api/src/runtime.ts',
+        'packages/simulator/src/main.ts',
       ],
       reporter: ['text', 'lcov'],
       // NFR-6: 80 percent on shared, simulator, and api; Phase 2 sets 90 for shared.

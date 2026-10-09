@@ -1,5 +1,7 @@
 import { App } from 'aws-cdk-lib';
 import { ApiStack } from '../src/stacks/api-stack.js';
+import { EdgeHostStack } from '../src/stacks/edge-host-stack.js';
+import { EdgeStack } from '../src/stacks/edge-stack.js';
 import { FoundationStack } from '../src/stacks/foundation-stack.js';
 import { IngestStack } from '../src/stacks/ingest-stack.js';
 import { SiteWiseStack } from '../src/stacks/sitewise-stack.js';
@@ -28,3 +30,18 @@ new IngestStack(app, 'EtpIngest', {
 
 const buildVersion = String(app.node.tryGetContext('buildVersion') ?? 'dev');
 new ApiStack(app, 'EtpApi', { ...common, buildVersion });
+
+// Greengrass edge (SRS 6.2). The image tag comes from scripts/publish-simulator-image.ts;
+// "unpublished" lets CI synthesize without one (a deploy with it would fail on the device).
+const imageTag = String(app.node.tryGetContext('simulatorImageTag') ?? 'unpublished');
+const edge = new EdgeStack(app, 'EtpEdge', {
+  ...common,
+  repository: foundation.simulatorRepository,
+  imageTag,
+});
+
+// FR-EDGE-6: the EC2 core host exists only when asked for, so it can be destroyed after demos.
+if (String(app.node.tryGetContext('edgeHost')) === 'ec2') {
+  const host = new EdgeHostStack(app, 'EtpEdgeHost', common);
+  host.addStackDependency(edge);
+}

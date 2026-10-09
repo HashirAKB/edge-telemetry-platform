@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { createTransport } from './transports/index.js';
 import { MqttTransport, type MqttClientLike, type MqttSettings } from './transports/mqtt.js';
 import { StdoutTransport } from './transports/stdout.js';
+import { IpcTransport, type IpcClientLike } from './transports/ipc.js';
 import { memoryLogger } from './test-helpers.js';
 
 const settings: MqttSettings = {
@@ -162,5 +163,66 @@ describe('createTransport (FR-SIM-5)', () => {
   it('guards against mqtt without settings', () => {
     const config = { ...loadConfig({}), transport: 'mqtt' as const };
     expect(() => createTransport(config, logger)).toThrow(/requires mqtt settings/);
+  });
+});
+
+describe('IpcTransport (FR-SIM-5, Greengrass path)', () => {
+  function fakeIpc(publish: IpcClientLike['publishQos1']): IpcClientLike & { closed: boolean } {
+    return {
+      closed: false,
+      connect: () => Promise.resolve(),
+      close() {
+        this.closed = true;
+        return Promise.resolve();
+      },
+      publishQos1: publish,
+      getConfiguration: () => Promise.resolve(undefined),
+      onConfigurationUpdate: () => Promise.resolve(),
+    };
+  }
+
+  it('publishes through the nucleus and closes the client', async () => {
+    const sent: string[] = [];
+    const client = fakeIpc((topic) => {
+      sent.push(topic);
+      return Promise.resolve();
+    });
+    const t = new IpcTransport(client, memoryLogger());
+    await t.connect();
+    await t.publish('telemetry/v1/x', '{}');
+    await t.close();
+    expect(sent).toEqual(['telemetry/v1/x']);
+    expect(client.closed).toBe(true);
+  });
+
+  it('times out when the nucleus does not answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const t = new IpcTransport(
+        fakeIpc(() => new Promise(() => undefined)),
+        memoryLogger(),
+        1_000,
+      );
+      const publishing = t.publish('t', '{}');
+      const assertion = expect(publishing).rejects.toThrow(/ipc publish timed out/);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is selected for TRANSPORT=ipc and requires a client', () => {
+    const config = loadConfig({ TRANSPORT: 'ipc' });
+    const logger = memoryLogger();
+    expect(() => createTransport(config, logger)).toThrow(/requires a Greengrass IPC client/);
+    expect(
+      createTransport(
+        config,
+        logger,
+        {},
+        fakeIpc(() => Promise.resolve()),
+      ).name,
+    ).toBe('ipc');
   });
 });

@@ -8,3 +8,4 @@ export { Publisher } from './publisher.js';
 export { Simulator } from './simulator.js';
 export { createTransport, type Transport } from './transports/index.js';
 export { MqttTransport, type MqttSettings } from './transports/mqtt.js';
+export { IpcTransport, GREENGRASS_CONFIG_KEY, type IpcClientLike } from './transports/ipc.js';

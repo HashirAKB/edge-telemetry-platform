@@ -280,10 +280,19 @@ importers:
       '@aws-sdk/client-cloudwatch-logs':
         specifier: 3.1148.0
         version: 3.1148.0
+      '@aws-sdk/client-ecr':
+        specifier: 3.1148.0
+        version: 3.1148.0
+      '@aws-sdk/client-greengrassv2':
+        specifier: 3.1148.0
+        version: 3.1148.0
       '@aws-sdk/client-iot':
         specifier: 3.1148.0
         version: 3.1148.0
       '@aws-sdk/client-iotsitewise':
+        specifier: 3.1148.0
+        version: 3.1148.0
+      '@aws-sdk/client-ssm':
         specifier: 3.1148.0
         version: 3.1148.0
       '@aws-sdk/client-sts':
@@ -361,12 +370,24 @@ packages:
     resolution: {integrity: sha512-HDG0Y9+fXb7kihzmkcoBbdNkaySeB/tD3wXtbV7Cj3HTJBy37ilxEzp9RXUM+efaBvBTpIVcPKpEQlHVbz8H0g==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/client-ecr@3.1148.0':
+    resolution: {integrity: sha512-zKh1FUeNWqLT1d+II6Gccrmn0SQAXiVKDeT7dVrLI3AnZqyQKLvyc2Ddsu2kimt3gbpHGnwS084sHl9abDkcmw==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-greengrassv2@3.1148.0':
+    resolution: {integrity: sha512-0wKRXT0tyGgrvcL+7Fd58SfTMkrlXNamPjxBH9o5GaDRNrZoxwHLiE1oPAuhuSX2TxkF+txZqx8clw8xdRhXXw==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/client-iot@3.1148.0':
     resolution: {integrity: sha512-8r7/Fe0iIOjWBGUb9PDE1mPthJJtewCadxkIR5lcXghLERJ3w+hmT33oWAJoahYFw7FRjxvzPFsUvpgJ6gP71w==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-iotsitewise@3.1148.0':
     resolution: {integrity: sha512-Xqtf4ue8IIzfHV8trVmy/xZx2QsfO6gZ3a7uju/RjLwtXMNRxmuefpmdFKvT9g1fSY1NqdLHoqbUsKoprKZG/g==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-ssm@3.1148.0':
+    resolution: {integrity: sha512-3T2JEdeceotCTmJZM5Tima1wQlYqwj5W5VnugbeimTkWqUG0W/9KxotkJMVETl32h496swFJSUTrbmVjbZJfIA==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-sts@3.1148.0':
@@ -1823,6 +1844,28 @@ snapshots:
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
+  '@aws-sdk/client-ecr@3.1148.0':
+    dependencies:
+      '@aws-sdk/core': 3.978.1
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@aws-sdk/types': 3.974.6
+      '@smithy/core': 3.35.1
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.19.0
+      tslib: 2.8.1
+
+  '@aws-sdk/client-greengrassv2@3.1148.0':
+    dependencies:
+      '@aws-sdk/core': 3.978.1
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@aws-sdk/types': 3.974.6
+      '@smithy/core': 3.35.1
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.19.0
+      tslib: 2.8.1
+
   '@aws-sdk/client-iot@3.1148.0':
     dependencies:
       '@aws-sdk/core': 3.978.1
@@ -1835,6 +1878,17 @@ snapshots:
       tslib: 2.8.1
 
   '@aws-sdk/client-iotsitewise@3.1148.0':
+    dependencies:
+      '@aws-sdk/core': 3.978.1
+      '@aws-sdk/credential-provider-node': 3.972.84
+      '@aws-sdk/types': 3.974.6
+      '@smithy/core': 3.35.1
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.19.0
+      tslib: 2.8.1
+
+  '@aws-sdk/client-ssm@3.1148.0':
     dependencies:
       '@aws-sdk/core': 3.978.1
       '@aws-sdk/credential-provider-node': 3.972.84

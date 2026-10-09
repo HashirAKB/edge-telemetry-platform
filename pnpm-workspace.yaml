@@ -11,3 +11,6 @@ minimumReleaseAgeExclude:
   - '@aws-sdk/client-sts@3.1148.0'
   - '@aws-sdk/client-api-gateway@3.1148.0'
   - '@aws-sdk/client-cloudformation@3.1148.0'
+  - '@aws-sdk/client-ecr@3.1148.0'
+  - '@aws-sdk/client-greengrassv2@3.1148.0'
+  - '@aws-sdk/client-ssm@3.1148.0'

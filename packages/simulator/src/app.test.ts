@@ -79,6 +79,60 @@ describe('startApp', () => {
   });
 });
 
+describe('reconfigure (FR-EDGE-4)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 9, 7, 12));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('applies a new interval and faults live, and seq continues without a gap', async () => {
+    const transport = new FakeTransport();
+    const app = await startApp(loadConfig({}), transport, memoryLogger());
+    await vi.advanceTimersByTimeAsync(10_000); // ticks at 0, 5, 10 s
+    const pump = (payload: string) =>
+      JSON.parse(payload) as { machineId: string; seq: number; status: string };
+    const seqsBefore = transport.published
+      .map((m) => pump(m.payload))
+      .filter((m) => m.machineId === 'pump-02')
+      .map((m) => m.seq);
+    expect(seqsBefore).toEqual([0, 1, 2]);
+
+    app.reconfigure(
+      loadConfig({ INTERVAL_MS: '1000' }, undefined, {
+        faults: [
+          {
+            kind: 'bearingWear',
+            machineId: 'pump-02',
+            startOffsetSec: 0,
+            durationSec: 600,
+            rampSec: 1,
+          },
+        ],
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(3_000);
+    const pump02 = transport.published
+      .map((m) => pump(m.payload))
+      .filter((m) => m.machineId === 'pump-02');
+    expect(pump02.map((m) => m.seq)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(pump02.at(-1)?.status).toBe('FAULT');
+    await app.shutdown('test');
+  });
+
+  it('ignores reconfiguration after shutdown has started', async () => {
+    const transport = new FakeTransport();
+    const app = await startApp(loadConfig({}), transport, memoryLogger());
+    await app.shutdown('test');
+    app.reconfigure(loadConfig({ INTERVAL_MS: '1000' }));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(app.simulator.running).toBe(false);
+  });
+});
+
 describe('createLogger (FR-SIM-9)', () => {
   it('writes JSON lines at or above the configured level', () => {
     const lines: string[] = [];

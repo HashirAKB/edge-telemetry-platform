@@ -23,7 +23,7 @@ const IdleWindow = z.strictObject({
   durationSec: z.number().positive(),
 });
 
-export const TRANSPORTS = ['stdout', 'mqtt'] as const;
+export const TRANSPORTS = ['stdout', 'mqtt', 'ipc'] as const;
 
 export const SimulatorConfigSchema = z
   .strictObject({
@@ -101,13 +101,15 @@ function compact(record: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * Configuration precedence: schema defaults, then the JSON file at `CONFIG_FILE`, then
- * environment variables (FR-SIM-6). Under Greengrass (Phase 6) the component configuration
- * replaces the file and can be changed live by a deployment config merge.
+ * Configuration precedence: schema defaults, then the JSON file at `CONFIG_FILE`, then the
+ * Greengrass component configuration, then environment variables (FR-SIM-6). Under Greengrass
+ * a deployment config merge changes settings live without rebuilding the image (FR-EDGE-4).
  */
 export function loadConfig(
   env: Env,
   readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
+  /** Settings from the Greengrass component configuration (`simulator` key), when running there. */
+  greengrass?: unknown,
 ): SimulatorConfig {
   let fromFile: Record<string, unknown> = {};
   if (env.CONFIG_FILE) {
@@ -130,8 +132,11 @@ export function loadConfig(
   const fileMqtt = (fromFile.mqtt ?? {}) as Record<string, unknown>;
   const mqtt = { ...fileMqtt, ...mqttFromEnv };
 
+  const fromGreengrass =
+    greengrass && typeof greengrass === 'object' ? (greengrass as Record<string, unknown>) : {};
   const merged = {
     ...fromFile,
+    ...fromGreengrass,
     ...compact({
       transport: env.TRANSPORT,
       seed: numberFromEnv(env.SEED),

@@ -10,6 +10,12 @@ export const SHUTDOWN_FLUSH_MS = 5_000;
 export interface App {
   readonly simulator: Simulator;
   readonly publisher: Publisher;
+  /**
+   * Apply a new configuration live (a Greengrass config merge, FR-EDGE-4): restart sampling with
+   * the new interval, faults, and idle windows. Fault offsets count from now; `seq` continues.
+   * The publisher and its buffer are kept.
+   */
+  reconfigure(config: SimulatorConfig): void;
   /** Stop sampling, flush the buffer best-effort, close the transport. Never throws. */
   shutdown(signal: string): Promise<void>;
 }
@@ -22,7 +28,7 @@ export async function startApp(
 ): Promise<App> {
   await transport.connect();
   const publisher = new Publisher({ transport, bufferMax: config.bufferMax, logger });
-  const simulator = new Simulator({ config, publisher, logger });
+  let simulator = new Simulator({ config, publisher, logger });
   simulator.start();
   logger.info('simulator started', {
     transport: transport.name,
@@ -47,5 +53,24 @@ export async function startApp(
     return stopping;
   };
 
-  return { simulator, publisher, shutdown };
+  const reconfigure = (next: SimulatorConfig): void => {
+    if (stopping) return;
+    const initialSeq = simulator.nextSeqs();
+    simulator.stop();
+    simulator = new Simulator({ config: next, publisher, logger, initialSeq });
+    simulator.start();
+    logger.info('configuration applied', {
+      intervalMs: next.intervalMs,
+      faults: next.faults.map((f) => `${f.kind}:${f.machineId}`),
+    });
+  };
+
+  return {
+    get simulator() {
+      return simulator;
+    },
+    publisher,
+    reconfigure,
+    shutdown,
+  };
 }

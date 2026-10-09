@@ -105,4 +105,25 @@ describe('loadConfig (FR-SIM-6)', () => {
       }),
     ).toThrow(/Cannot read CONFIG_FILE missing.json: ENOENT/);
   });
+
+  it('layers Greengrass component configuration between the file and the environment', () => {
+    const config = loadConfig(
+      { CONFIG_FILE: 'sim.json', INTERVAL_MS: '2000' },
+      file({ intervalMs: 9_000, seed: 3, bufferMax: 7 }),
+      {
+        intervalMs: 4_000,
+        seed: 5,
+        faults: [
+          { kind: 'bearingWear', machineId: 'pump-02', startOffsetSec: 0, durationSec: 600 },
+        ],
+      },
+    );
+    expect(config).toMatchObject({ intervalMs: 2_000, seed: 5, bufferMax: 7 });
+    expect(config.faults[0]).toMatchObject({ kind: 'bearingWear', machineId: 'pump-02' });
+  });
+
+  it('rejects an invalid Greengrass configuration with a readable error', () => {
+    expect(() => loadConfig({}, undefined, { intervalMs: 'often' })).toThrow(/intervalMs/);
+    expect(loadConfig({}, undefined, 'not an object').intervalMs).toBe(5_000);
+  });
 });

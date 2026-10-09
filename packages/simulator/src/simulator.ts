@@ -8,6 +8,8 @@ export interface SimulatorOptions {
   readonly publisher: Publisher;
   readonly logger: Logger;
   readonly now?: () => number;
+  /** Next `seq` per machine ID, carried over from a previous simulator on reconfiguration. */
+  readonly initialSeq?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -33,6 +35,7 @@ export class Simulator {
           startedAtMs: this.startedAtMs,
           faults: config.faults.filter((f) => f.machineId === machine.machineId),
           idleWindows: config.idleWindows.filter((w) => w.machineId === machine.machineId),
+          initialSeq: options.initialSeq?.get(machine.machineId) ?? 0,
         }),
     );
   }
@@ -45,6 +48,10 @@ export class Simulator {
   stop(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+  }
+
+  nextSeqs(): Map<string, number> {
+    return new Map(this.machines.map((m) => [m.machineId, m.nextSeq]));
   }
 
   get running(): boolean {
