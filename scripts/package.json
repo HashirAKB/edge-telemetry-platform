@@ -2,7 +2,7 @@
   "name": "@etp/scripts",
   "version": "0.1.0",
   "private": true,
-  "description": "Operational scripts: dev device, ingest checks",
+  "description": "Operational scripts: devices, edge, checks, monitoring, teardown",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -20,7 +20,8 @@
     "edge:fault": "tsx --conditions=@etp/source edge-fault.ts",
     "edge:deprovision": "tsx --conditions=@etp/source deprovision-edge-core.ts",
     "monitor:on": "tsx --conditions=@etp/source monitor-toggle.ts on",
-    "monitor:off": "tsx --conditions=@etp/source monitor-toggle.ts off"
+    "monitor:off": "tsx --conditions=@etp/source monitor-toggle.ts off",
+    "teardown": "tsx --conditions=@etp/source teardown.ts"
   },
   "dependencies": {
     "@aws-sdk/client-api-gateway": "3.1148.0",
