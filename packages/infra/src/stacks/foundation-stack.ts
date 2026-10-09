@@ -1,5 +1,6 @@
 import { RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
@@ -32,6 +33,23 @@ export class FoundationStack extends Stack {
       topicName: 'etp-alerts',
       enforceSSL: true,
     });
+    // enforceSSL gives the topic an explicit policy, which drops the default "this account may
+    // publish" access, so CloudWatch alarm actions were denied (found in the Phase 7 alarm test).
+    // Allow this account's etp alarms, and nothing else, to publish.
+    this.alertsTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowEtpAlarms',
+        principals: [new iam.ServicePrincipal('cloudwatch.amazonaws.com')],
+        actions: ['sns:Publish'],
+        resources: [this.alertsTopic.topicArn],
+        conditions: {
+          StringEquals: { 'aws:SourceAccount': this.account },
+          ArnLike: {
+            'aws:SourceArn': `arn:${this.partition}:cloudwatch:${this.region}:${this.account}:alarm:etp-*`,
+          },
+        },
+      }),
+    );
 
     this.ruleErrorsLogGroup = new logs.LogGroup(this, 'RuleErrorsLogGroup', {
       logGroupName: RULE_ERRORS_LOG_GROUP,

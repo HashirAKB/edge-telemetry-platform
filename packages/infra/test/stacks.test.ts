@@ -250,6 +250,16 @@ describe('EtpIngest (FR-ING-1 to FR-ING-6)', () => {
 });
 
 describe('EtpFoundation', () => {
+  it("lets this account's etp alarms publish to the alerts topic, over TLS only", () => {
+    const policy = JSON.stringify(
+      resources(foundation, 'AWS::SNS::TopicPolicy')[0]?.Properties.PolicyDocument,
+    );
+    expect(policy).toContain('"Service":"cloudwatch.amazonaws.com"');
+    expect(policy).toContain('aws:SourceAccount');
+    expect(policy).toContain(':alarm:etp-*');
+    expect(policy).toContain('aws:SecureTransport');
+  });
+
   it('scans simulator images on push and keeps the last five', () => {
     foundation.hasResourceProperties('AWS::ECR::Repository', {
       RepositoryName: 'etp/simulator',
