@@ -124,3 +124,20 @@ Four real problems. The account's EC2 quota was 1 vCPU, so `t3.small` would not 
 
 **Q: What changes for 10,000 devices?**
 Fleet provisioning by claim (or a hardware security module) instead of keys created in the cloud; thing groups per site and per rollout ring, with deployment rollout and abort configuration; component configuration per group rather than per device; Stream Manager or batched ingestion for high-volume sites instead of one MQTT message per sample; SiteWise quota planning for assets and data streams; and fleet health from the Greengrass status reports into dashboards and alarms.
+
+## Phase 7: Observability and cost
+
+**Q: How do you know data is flowing, not just that services are up?**
+A freshness monitor. A small Lambda runs every minute, reads the latest `temperature_c` timestamp for each machine, and publishes `SecondsSinceLastValue` with a `machineId` dimension. Each machine has an alarm at over 120 seconds for 3 consecutive minutes, and a composite alarm fires only when every machine is stale, which means the edge or its publisher is down rather than one sensor. Health checks tell you a service answers; freshness tells you the data product is actually fresh, which is what application teams care about.
+
+**Q: What did the end-to-end alarm test show?**
+Stopping Greengrass on the core made all five stale alarms fire 5 minutes 24 seconds later and the composite 8 seconds after that. The first run caught a real bug: every alarm fired, but CloudWatch could not publish to the SNS topic. Turning on `enforceSSL` gives the topic an explicit policy containing only a deny for non-TLS publishing, which silently drops the default "this account may publish" access. I added an allow for `cloudwatch.amazonaws.com`, limited to this account's `etp-` alarms, and the rerun delivered 6 notifications with 0 failures. Without the end-to-end test, the alarms would have looked correct in the console and never paged anyone.
+
+**Q: Why is the freshness monitor off by default?**
+The platform runs on demand. An always-on freshness monitor would email "stale" every time the edge is intentionally stopped, which trains people to ignore alerts. It also costs about USD 1.80 a month in custom metrics and reads. So alarms, dashboard, and budget are always deployed, the monitor is toggled around demos, and alarms treat missing data as healthy. In a 24/7 production system the monitor would always be on and the alarm would route to an on-call rotation.
+
+**Q: What else is monitored?**
+IoT rule write failures to SiteWise per rule (the `AWS/IoT` `Failure` metric with `ActionType=IotSiteWise`, found by listing the metrics the account actually emitted), Lambda errors per function, and the API 5xx rate as a metric-math expression over 5 minutes. The `etp-overview` dashboard puts ingest rate, failures, freshness per machine, API latency p50/p95/p99, and Lambda errors on one page. Metric names live in `shared`, so the Lambda that publishes and the alarm that reads cannot drift apart.
+
+**Q: How is cost controlled?**
+An AWS Budgets budget of USD 10 a month in CDK emails at 50, 80, and 100 percent of actual spend and 100 percent of forecast. `docs/cost.md` breaks down every running cost from the Mumbai price list. The main levers are on-demand operation (no EC2 or telemetry when idle), the sampling interval (SiteWise bills each value), and keeping the monitor off between demos. Idle cost is about USD 1.60 a month, almost all alarms.

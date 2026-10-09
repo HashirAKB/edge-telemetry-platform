@@ -57,7 +57,21 @@ With nothing publishing, the deployed stacks cost close to nothing:
 | SiteWise stored data                    | $0.013 per GB-day; a 10 minute run stores well under 1 MB |
 | CDK bootstrap bucket and repository     | storage only, cents per month                             |
 
+## Monitoring cost
+
+Mumbai list prices (2026-10-10): custom metrics USD 0.30 per metric-month (billed by the hour, only while data arrives), standard alarms USD 0.10 per alarm-month, composite alarms USD 0.50 per month, the first three dashboards free.
+
+| Item                                                                     | Always deployed              | Cost per month                      |
+| ------------------------------------------------------------------------ | ---------------------------- | ----------------------------------- |
+| 11 metric alarms and 1 composite alarm                                   | yes                          | about USD 1.60                      |
+| `etp-overview` dashboard                                                 | yes                          | free (within three dashboards)      |
+| `etp-monthly` budget                                                     | yes                          | free (first two budgets)            |
+| Freshness monitor (5 custom metrics, 43,200 Lambda runs, SiteWise reads) | only while `pnpm monitor:on` | about USD 1.80 if left on all month |
+
+The freshness schedule is **off by default**. An always-on monitor on an on-demand platform would send "stale" emails every time the edge is intentionally stopped. Turn it on for demos (`pnpm monitor:on`) and off afterwards (`pnpm monitor:off`); with no data, the alarms treat missing data as healthy and stay quiet.
+
 ## Guardrails
 
-- An AWS zero-spend budget, set up by hand in the console. It emails on the first cent of spend, so it fires during any test run; the observability phase replaces it with a USD 10 monthly budget in CDK with 50, 80, and 100 percent alerts (FR-OBS-5).
+- `etp-monthly`: a USD 10 monthly AWS Budgets budget in CDK (FR-OBS-5) that emails at 50, 80, and 100 percent of actual spend and 100 percent of forecast.
+- An AWS zero-spend budget, set up by hand in the console earlier. It emails on the first cent of spend.
 - `pnpm teardown` (Phase 8) removes every billable resource (NFR-8).

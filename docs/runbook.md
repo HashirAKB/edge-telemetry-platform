@@ -66,3 +66,15 @@ pnpm -F @etp/infra exec cdk destroy EtpEdge --profile etp -c simulatorImageTag=<
 ```
 
 `edge:deprovision` is needed because the instance creates its own AWS IoT thing and certificate during installation (ADR 0014); CloudFormation does not manage them.
+
+## Monitoring
+
+```bash
+pnpm monitor:on     # start the freshness monitor (every minute) before a demo
+pnpm monitor:off    # stop it afterwards so stale alarms do not page during intentional downtime
+```
+
+- Dashboard: CloudWatch, `etp-overview` (ingest rate, rule failures, freshness per machine, API latency, Lambda errors).
+- Alarms go to the `etp-alerts` SNS topic. The email subscription comes from CDK context: deploy `EtpObservability` with `-c alertEmail=<address>` and click the confirmation link AWS sends; nothing is delivered until then.
+- Expected timing: a machine is marked stale after 120 seconds without a value for 3 consecutive minutes, so the stale and "simulator offline" emails arrive about 5.5 minutes after the edge stops (measured: 5 min 24 s and 5 min 32 s).
+- Deploying `EtpObservability` on its own the first time fails with "No export named EtpFoundation:...AlertsTopic": deploy `EtpFoundation EtpObservability` together (without `--exclusively`) so the export exists.
