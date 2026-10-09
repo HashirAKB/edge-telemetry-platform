@@ -101,3 +101,26 @@ The API flagged pump-01 as stale with data 20 seconds old against a 15 second th
 
 **Q: API keys are not real auth. What would you use in production?**
 Correct, API keys identify and meter callers but are shared secrets, not identity. For user-facing apps I would use JWT authorization through an identity provider with scopes per team or site, IAM SigV4 for service-to-service calls, and keep API keys only as a usage-plan handle for throttling and quotas. ADR 0008 has the comparison.
+
+## Phase 6: Greengrass edge
+
+**Q: Walk me through the Greengrass pieces: nucleus, components, recipes, deployments, thing groups.**
+The nucleus is the Java runtime on the device; it manages components, holds the one MQTT connection to AWS IoT Core, and spools messages. A component is a unit of software described by a recipe: its version, dependencies, configuration defaults, lifecycle scripts, and artifacts (here a Docker image in ECR). A deployment says "this set of component versions and configuration" and targets a thing group, so every core in `etp-edge-cores` converges to it. Adding a device to the group is enough to give it the whole stack.
+
+**Q: How does a Docker container talk to Greengrass?**
+Through IPC over a Unix socket. The recipe mounts the nucleus socket into the container and passes `SVCUID` and the socket path as environment variables; `SVCUID` authenticates the component to the nucleus. The container has no certificate and no AWS credentials. An `accessControl` policy in the recipe allows only `PublishToIoTCore` on `telemetry/v1/#`. A `Shutdown` step runs `docker stop`, because otherwise stopping the component only kills the docker client and leaves the container running.
+
+**Q: What are the token exchange service and the role alias for?**
+Components sometimes need AWS credentials, here to pull the image from ECR. The core's X.509 certificate is exchanged for temporary IAM credentials through an AWS IoT role alias that points at the token exchange role. That role can pull from the one simulator repository and nothing else. The device never stores long-lived AWS keys.
+
+**Q: Show me that offline buffering works.**
+`pnpm edge:outage-test` drops outbound MQTT on the core for 2 minutes. The nucleus log shows "Connection interrupted" about 50 seconds in, when a keepalive ping went unanswered, and "Connection resumed" with `sessionPresent=true` right after the block is lifted. SiteWise then has 36 points for 36 intervals with a largest gap of 5 seconds: zero loss, every value at its original device timestamp. Messages sent into the dead connection before the client noticed were not acknowledged, so the spool kept them and resent them. A second run restarts Greengrass during the outage: for about 45 seconds after the network came back only 7 of 37 points were in SiteWise, then all of them arrived at once (largest gap 6 seconds), so the messages queued before the restart survived on disk. The restart also exercised graceful shutdown: the simulator logged `published 925, dropped 0, unsent 0` as it received SIGTERM.
+
+**Q: How do you change behaviour on a running edge device?**
+With a deployment configuration merge, not a new image. `pnpm edge:fault bearingWear pump-02 900` creates a new revision of the group's deployment that only changes the simulator's `faults` setting. The component received it over IPC about 19 seconds later and applied it live. Vibration climbed from 3.3 to 7.6 mm/s in three minutes, status turned FAULT, `vibration_alert` became 1, and in the next 5 minute window `max_vibration_5m` and the line rollup both read 10.86 while `alert_minutes_5m` read 3.8, matching the time spent above the threshold.
+
+**Q: What went wrong getting the edge up, and how did you handle it?**
+Four real problems. The account's EC2 quota was 1 vCPU, so `t3.small` would not launch; I moved to `t2.micro` with swap and a capped JVM heap and measured that it fits. The installer's automatic provisioning tried to attach a broad extra IAM policy to my least-privilege token exchange role, so I switched to the documented manual provisioning path and the instance role now has no IAM permissions at all. Greengrass caps component version numbers at 999999, which my hash-based versions exceeded. And a shell variable that did not word-split dropped the image tag, deploying a component that pointed at a missing image; the CDK app now refuses to synthesize with credentials and no tag. Each fix has a test or a guard so it cannot come back silently.
+
+**Q: What changes for 10,000 devices?**
+Fleet provisioning by claim (or a hardware security module) instead of keys created in the cloud; thing groups per site and per rollout ring, with deployment rollout and abort configuration; component configuration per group rather than per device; Stream Manager or batched ingestion for high-volume sites instead of one MQTT message per sample; SiteWise quota planning for assets and data streams; and fleet health from the Greengrass status reports into dashboards and alarms.
