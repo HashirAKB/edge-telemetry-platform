@@ -81,3 +81,23 @@ A script tries what the device must not be able to do. Publishing to a telemetry
 
 **Q: What does this cost, and what would change at scale?**
 About $9 per million device messages here, mostly SiteWise ingestion, which bills each of the 5 values in a message separately. That is 3 cents an hour for 5 machines at a 5 second interval and nothing when idle, so the platform runs on demand. At scale I would batch values per stream on the edge (Stream Manager or buffered ingestion), pick sampling rates per measurement instead of one global interval, and move older data to the cold tier.
+
+## Phase 5: Query API
+
+**Q: Why is the query API two Lambdas and not one, or one per route?**
+The catalog (tree, lookups, health) and time-series reads have different shapes: catalog answers are small and cacheable, telemetry reads fan out to SiteWise and are latency-sensitive. Separate functions give separate permissions, alarms, and blast radius, so a throttling storm in history reads cannot take down the health check. One function per route would multiply cold starts and deployment units for no gain at this size.
+
+**Q: How do you stop the API from becoming a generic SiteWise proxy?**
+Both services resolve every request through the site's asset tree, built from the root asset and cached for 5 minutes. An asset or property outside that tree returns 404 even if the ID exists elsewhere in the account. The IAM roles are read-only, and the tree also answers parent and key lookups without extra SiteWise calls.
+
+**Q: How are the API contract, validation, and docs kept in sync?**
+One set of zod schemas in `shared` defines requests and responses. Handlers validate input with them, consumers import the inferred TypeScript types, the OpenAPI 3.1 file is generated from them, and the API Gateway routes are built from the same route table. CI regenerates the OpenAPI file and fails if the committed copy differs.
+
+**Q: What broke on the first deploy, and what did you learn?**
+Every Lambda crashed on startup with `Cannot find module '@smithy/service-error-classification'`. CDK leaves the AWS SDK out of the bundle by default and uses the runtime's copy, and a recommended feature flag also excluded the SDK's `@smithy` internals, which the runtime does not expose. I now bundle the SDK, so production runs the exact locked version the tests use, and an infra test asserts the bundles contain no external SDK imports. I found it with `apigateway test-invoke-method`, which calls the integration directly, while the new API's DNS name was still propagating.
+
+**Q: Why did fresh data show as stale?**
+The API flagged pump-01 as stale with data 20 seconds old against a 15 second threshold. The development machine's clock was 25 seconds slow with NTP switched off. Values carry device timestamps by design (ADR 0004), so device clock error shows up directly in the cloud. The staleness check did its job; the fix belongs on the device (time sync), and the Greengrass core runs chrony.
+
+**Q: API keys are not real auth. What would you use in production?**
+Correct, API keys identify and meter callers but are shared secrets, not identity. For user-facing apps I would use JWT authorization through an identity provider with scopes per team or site, IAM SigV4 for service-to-service calls, and keep API keys only as a usage-plan handle for throttling and quotas. ADR 0008 has the comparison.
