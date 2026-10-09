@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { App, type Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
@@ -225,6 +227,18 @@ describe('EtpApi (SRS 6.5)', () => {
         MemorySize: 256,
         Timeout: 10,
       });
+    }
+  });
+
+  it('bundles the AWS SDK into each function instead of relying on the runtime copy', () => {
+    const outdir = app.synth().directory;
+    const bundles = readdirSync(outdir)
+      .filter((d) => d.startsWith('asset.') && statSync(join(outdir, d)).isDirectory())
+      .map((d) => readFileSync(join(outdir, d, 'index.js'), 'utf8'));
+    expect(bundles.length).toBeGreaterThanOrEqual(2);
+    for (const code of bundles) {
+      // A real import is `=require("...")`; the SDK also mentions require() inside error text.
+      expect(code).not.toMatch(/[=,(]require\("@(aws-sdk|smithy)\//);
     }
   });
 

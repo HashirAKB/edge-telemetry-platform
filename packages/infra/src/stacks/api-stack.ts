@@ -82,6 +82,10 @@ export class ApiStack extends Stack {
           target: 'node24',
           // Resolve workspace packages to their TypeScript sources (see ADR 0010).
           esbuildArgs: { '--conditions': '@etp/source' },
+          // Bundle the AWS SDK instead of using the runtime's copy: the deployed code runs the
+          // exact locked version we test, and the runtime does not expose every @smithy/*
+          // package the SDK imports (found on first deploy, ADR 0007).
+          externalModules: [],
         },
       });
       const arn = (resource: string) =>
