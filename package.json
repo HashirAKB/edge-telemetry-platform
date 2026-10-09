@@ -32,7 +32,9 @@
     "edge:status": "pnpm -F @etp/scripts run edge:status",
     "edge:outage-test": "pnpm -F @etp/scripts run edge:outage-test",
     "edge:fault": "pnpm -F @etp/scripts run edge:fault",
-    "edge:deprovision": "pnpm -F @etp/scripts run edge:deprovision"
+    "edge:deprovision": "pnpm -F @etp/scripts run edge:deprovision",
+    "monitor:on": "pnpm -F @etp/scripts run monitor:on",
+    "monitor:off": "pnpm -F @etp/scripts run monitor:off"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

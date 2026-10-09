@@ -18,7 +18,9 @@
     "edge:status": "tsx --conditions=@etp/source edge-status.ts",
     "edge:outage-test": "tsx --conditions=@etp/source outage-test.ts",
     "edge:fault": "tsx --conditions=@etp/source edge-fault.ts",
-    "edge:deprovision": "tsx --conditions=@etp/source deprovision-edge-core.ts"
+    "edge:deprovision": "tsx --conditions=@etp/source deprovision-edge-core.ts",
+    "monitor:on": "tsx --conditions=@etp/source monitor-toggle.ts on",
+    "monitor:off": "tsx --conditions=@etp/source monitor-toggle.ts off"
   },
   "dependencies": {
     "@aws-sdk/client-api-gateway": "3.1148.0",
@@ -28,6 +30,7 @@
     "@aws-sdk/client-greengrassv2": "3.1148.0",
     "@aws-sdk/client-iot": "3.1148.0",
     "@aws-sdk/client-iotsitewise": "3.1148.0",
+    "@aws-sdk/client-scheduler": "3.1148.0",
     "@aws-sdk/client-ssm": "3.1148.0",
     "@aws-sdk/client-sts": "3.1148.0",
     "@etp/shared": "workspace:*",

@@ -7,6 +7,11 @@ import { aliasFor, listMachines, measurementNamesFor, topology, type Topology } 
 import { ApiStack, USAGE_PLAN } from '../src/stacks/api-stack.js';
 import { EdgeHostStack } from '../src/stacks/edge-host-stack.js';
 import {
+  DASHBOARD_NAME,
+  FRESHNESS_SCHEDULE,
+  ObservabilityStack,
+} from '../src/stacks/observability-stack.js';
+import {
   EDGE,
   EdgeStack,
   GREENGRASS_VERSIONS,
@@ -24,7 +29,15 @@ interface Resource {
   Properties: Record<string, unknown>;
 }
 
-function synth(options: { plant?: Topology; rawArchive?: boolean; imageTag?: string } = {}) {
+function synth(
+  options: {
+    plant?: Topology;
+    rawArchive?: boolean;
+    imageTag?: string;
+    alertEmail?: string | null;
+    freshnessEnabled?: boolean;
+  } = {},
+) {
   const app = new App();
   const common = { tags: { ...PROJECT_TAGS } };
   const foundation = new FoundationStack(app, 'Foundation', common);
@@ -38,20 +51,33 @@ function synth(options: { plant?: Topology; rawArchive?: boolean; imageTag?: str
     ruleErrorsLogGroup: foundation.ruleErrorsLogGroup,
     rawArchive: options.rawArchive ?? false,
   });
-  const api = new ApiStack(app, 'Api', { ...common, buildVersion: 'test' });
+  const apiStack = new ApiStack(app, 'Api', { ...common, buildVersion: 'test' });
   const edge = new EdgeStack(app, 'Edge', {
     ...common,
     repository: foundation.simulatorRepository,
     imageTag: options.imageTag ?? 'abc1234',
   });
   const edgeHost = new EdgeHostStack(app, 'EdgeHost', common);
+  const observability = new ObservabilityStack(app, 'Observability', {
+    ...common,
+    alertsTopic: foundation.alertsTopic,
+    ...(options.alertEmail === null
+      ? {}
+      : { alertEmail: options.alertEmail ?? 'alerts@example.com' }),
+    budgetUsd: 10,
+    freshnessEnabled: options.freshnessEnabled ?? false,
+    apiName: 'etp-query-api',
+    apiStage: 'live',
+    apiFunctions: Object.values(apiStack.functions),
+  });
   const template = (stack: Stack) => Template.fromStack(stack);
   return {
     app,
     foundation: template(foundation),
     sitewise: template(sitewise),
     ingest: template(ingest),
-    api: template(api),
+    api: template(apiStack),
+    observability: template(observability),
     edge: template(edge),
     edgeHost: template(edgeHost),
     componentVersion: edge.componentVersion,
@@ -62,7 +88,8 @@ function resources(template: Template, type: string): Resource[] {
   return Object.values(template.findResources(type)) as Resource[];
 }
 
-const { app, foundation, sitewise, ingest, api, edge, edgeHost, componentVersion } = synth();
+const { app, foundation, sitewise, ingest, api, edge, edgeHost, observability, componentVersion } =
+  synth();
 
 describe('EtpSiteWise (FR-SW-1, FR-SW-2)', () => {
   it('creates the four asset models', () => {
@@ -456,8 +483,108 @@ describe('EtpEdgeHost (FR-EDGE-6)', () => {
   });
 });
 
+describe('EtpObservability (SRS 6.6)', () => {
+  const alarms = () => resources(observability, 'AWS::CloudWatch::Alarm');
+
+  it('alarms on stale data per machine: over 120 s for 3 of 3 minutes, quiet when the monitor is off', () => {
+    const stale = alarms().filter((a) => String(a.Properties.AlarmName).startsWith('etp-stale-'));
+    expect(stale.map((a) => a.Properties.AlarmName)).toEqual(
+      listMachines().map((m) => `etp-stale-${m.machineId}`),
+    );
+    for (const a of stale) {
+      expect(a.Properties).toMatchObject({
+        MetricName: 'SecondsSinceLastValue',
+        Namespace: 'EdgeTelemetryPlatform',
+        Threshold: 120,
+        EvaluationPeriods: 3,
+        DatapointsToAlarm: 3,
+        Period: 60,
+        TreatMissingData: 'notBreaching',
+      });
+      expect(JSON.stringify(a.Properties.Dimensions)).toContain('freshness-monitor');
+    }
+  });
+
+  it('raises "simulator offline" only when every machine is stale', () => {
+    const composite = resources(observability, 'AWS::CloudWatch::CompositeAlarm')[0];
+    const rule = JSON.stringify(composite?.Properties.AlarmRule);
+    expect(rule.match(/ALARM\(/g)).toHaveLength(listMachines().length);
+    expect(rule).toContain(' AND ');
+    expect(rule).not.toContain(' OR ');
+  });
+
+  it('alarms on SiteWise rule failures, Lambda errors, and the API 5xx rate', () => {
+    const names = alarms().map((a) => String(a.Properties.AlarmName));
+    expect(names.filter((n) => n.startsWith('etp-rule-failures-'))).toHaveLength(2);
+    expect(names.filter((n) => n.startsWith('etp-lambda-errors-'))).toHaveLength(3);
+    expect(names).toContain('etp-api-5xx-rate');
+    const ruleAlarm = alarms().find((a) => a.Properties.AlarmName === 'etp-rule-failures-pump');
+    expect(ruleAlarm?.Properties.Dimensions).toEqual(
+      expect.arrayContaining([{ Name: 'ActionType', Value: 'IotSiteWise' }]),
+    );
+  });
+
+  it('sends every alarm to the alerts topic', () => {
+    for (const a of [...alarms(), ...resources(observability, 'AWS::CloudWatch::CompositeAlarm')]) {
+      expect((a.Properties.AlarmActions as unknown[]).length).toBe(1);
+    }
+  });
+
+  it('runs the freshness monitor every minute, off by default and on when asked', () => {
+    observability.hasResourceProperties('AWS::Scheduler::Schedule', {
+      Name: FRESHNESS_SCHEDULE,
+      ScheduleExpression: 'rate(1 minute)',
+      State: 'DISABLED',
+    });
+    synth({ freshnessEnabled: true }).observability.hasResourceProperties(
+      'AWS::Scheduler::Schedule',
+      {
+        State: 'ENABLED',
+      },
+    );
+  });
+
+  it('budgets USD 10 a month with 50, 80, 100 percent actual and 100 percent forecast alerts', () => {
+    const budget = resources(observability, 'AWS::Budgets::Budget')[0];
+    expect(budget?.Properties.Budget).toMatchObject({
+      BudgetLimit: { Amount: 10, Unit: 'USD' },
+      TimeUnit: 'MONTHLY',
+      BudgetType: 'COST',
+    });
+    const thresholds = (
+      budget?.Properties.NotificationsWithSubscribers as {
+        Notification: { Threshold: number; NotificationType: string };
+      }[]
+    ).map((n) => `${String(n.Notification.Threshold)} ${n.Notification.NotificationType}`);
+    expect(thresholds).toEqual(['50 ACTUAL', '80 ACTUAL', '100 ACTUAL', '100 FORECASTED']);
+  });
+
+  it('subscribes the email passed as context, and creates no subscription or budget without one', () => {
+    observability.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'email',
+      Endpoint: 'alerts@example.com',
+    });
+    const none = synth({ alertEmail: null }).observability;
+    none.resourceCountIs('AWS::SNS::Subscription', 0);
+    none.resourceCountIs('AWS::Budgets::Budget', 0);
+  });
+
+  it('builds the etp-overview dashboard', () => {
+    observability.hasResourceProperties('AWS::CloudWatch::Dashboard', {
+      DashboardName: DASHBOARD_NAME,
+    });
+  });
+
+  it('never hard-codes a personal email address in the source', () => {
+    const source = readdirSync(join(import.meta.dirname, '..', 'src', 'stacks'))
+      .map((f) => readFileSync(join(import.meta.dirname, '..', 'src', 'stacks', f), 'utf8'))
+      .join('\n');
+    expect(source).not.toMatch(/@gmail\.com/);
+  });
+});
+
 describe('security and hygiene across all stacks (NFR-4, NFR-8)', () => {
-  const templates = { foundation, sitewise, ingest, api, edge, edgeHost };
+  const templates = { foundation, sitewise, ingest, api, edge, edgeHost, observability };
 
   it('has no IAM statement with a wildcard action', () => {
     for (const [name, t] of Object.entries(templates)) {
@@ -475,7 +602,15 @@ describe('security and hygiene across all stacks (NFR-4, NFR-8)', () => {
 
   it('tags every stack with the project tags', () => {
     const assembly = app.synth();
-    for (const id of ['Foundation', 'SiteWise', 'Ingest', 'Api', 'Edge', 'EdgeHost']) {
+    for (const id of [
+      'Foundation',
+      'SiteWise',
+      'Ingest',
+      'Api',
+      'Edge',
+      'EdgeHost',
+      'Observability',
+    ]) {
       expect(assembly.getStackByName(id).tags).toEqual(PROJECT_TAGS);
     }
   });

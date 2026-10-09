@@ -1,11 +1,9 @@
-import { join } from 'node:path';
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Stack, type StackProps } from 'aws-cdk-lib';
 import * as apigw from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
-import * as logs from 'aws-cdk-lib/aws-logs';
+import type * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import type { Construct } from 'constructs';
+import { tsLambda } from '../constructs/ts-lambda.js';
 import {
   API_KEY_HEADER,
   API_ROUTES,
@@ -19,8 +17,6 @@ export interface ApiStackProps extends StackProps {
   /** Shown by /v1/health; defaults to "dev". */
   readonly buildVersion?: string;
 }
-
-const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 
 /** FR-API-9: per-key throttling and daily quota. */
 export const USAGE_PLAN = { rateLimit: 10, burstLimit: 20, dailyQuota: 10_000 } as const;
@@ -52,40 +48,14 @@ export class ApiStack extends Stack {
     super(scope, id, props);
 
     const fn = (service: ApiService): nodejs.NodejsFunction => {
-      const logGroup = new logs.LogGroup(this, `${service}-logs`, {
-        retention: logs.RetentionDays.TWO_WEEKS,
-        removalPolicy: RemovalPolicy.DESTROY,
-      });
-      const f = new nodejs.NodejsFunction(this, service, {
-        entry: join(REPO_ROOT, 'packages/api/src/handlers', `${service}.ts`),
-        handler: 'handler',
-        runtime: lambda.Runtime.NODEJS_24_X,
-        architecture: lambda.Architecture.ARM_64,
-        memorySize: 256,
-        timeout: Duration.seconds(10),
-        tracing: lambda.Tracing.ACTIVE,
-        logGroup,
+      const f = tsLambda(this, service, {
+        handler: service,
+        service,
         description: `etp ${service} (query API)`,
-        projectRoot: REPO_ROOT,
-        depsLockFilePath: join(REPO_ROOT, 'pnpm-lock.yaml'),
         environment: {
           ROOT_ASSET_EXTERNAL_ID: assetExternalIdFor(topology.site.id),
           PUBLISH_INTERVAL_MS: String(DEFAULT_PUBLISH_INTERVAL_MS),
           BUILD_VERSION: props.buildVersion ?? 'dev',
-          POWERTOOLS_SERVICE_NAME: service,
-          POWERTOOLS_METRICS_NAMESPACE: 'EdgeTelemetryPlatform',
-          NODE_OPTIONS: '--enable-source-maps',
-        },
-        bundling: {
-          minify: true,
-          sourceMap: true,
-          target: 'node24',
-          // Resolve workspace packages to their TypeScript sources (see ADR 0010).
-          esbuildArgs: { '--conditions': '@etp/source' },
-          // Bundle the AWS SDK instead of using the runtime's copy: the deployed code runs the
-          // exact locked version we test, and the runtime does not expose every @smithy/*
-          // package the SDK imports (found on first deploy, ADR 0007).
-          externalModules: [],
         },
       });
       const arn = (resource: string) =>

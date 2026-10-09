@@ -2,7 +2,7 @@ import { IoTSiteWiseClient } from '@aws-sdk/client-iotsitewise';
 import { Logger } from '@aws-lambda-powertools/logger';
 import { Metrics, MetricUnit } from '@aws-lambda-powertools/metrics';
 import { Tracer } from '@aws-lambda-powertools/tracer';
-import type { ApiService } from '@etp/shared';
+import { METRICS_NAMESPACE, type ApiService } from '@etp/shared';
 import type { AppLogger, AppMetrics } from './http/app.js';
 import { CatalogService } from './services/catalog.js';
 import { SdkSiteWiseReader } from './sitewise/sdk-reader.js';
@@ -14,7 +14,7 @@ import { SdkSiteWiseReader } from './sitewise/sdk-reader.js';
  */
 export function createRuntime(service: ApiService) {
   const logger = new Logger({ serviceName: service });
-  const metrics = new Metrics({ serviceName: service, namespace: 'EdgeTelemetryPlatform' });
+  const metrics = new Metrics({ serviceName: service, namespace: METRICS_NAMESPACE });
   const tracer = new Tracer({ serviceName: service });
   const client = tracer.captureAWSv3Client(new IoTSiteWiseClient({}));
   const reader = new SdkSiteWiseReader(client);

@@ -4,6 +4,7 @@ import { EdgeHostStack } from '../src/stacks/edge-host-stack.js';
 import { EdgeStack } from '../src/stacks/edge-stack.js';
 import { FoundationStack } from '../src/stacks/foundation-stack.js';
 import { IngestStack } from '../src/stacks/ingest-stack.js';
+import { ObservabilityStack } from '../src/stacks/observability-stack.js';
 import { SiteWiseStack } from '../src/stacks/sitewise-stack.js';
 import { PROJECT_TAGS } from '../src/tags.js';
 
@@ -31,7 +32,24 @@ new IngestStack(app, 'EtpIngest', {
 });
 
 const buildVersion = String(app.node.tryGetContext('buildVersion') ?? 'dev');
-new ApiStack(app, 'EtpApi', { ...common, buildVersion });
+const api = new ApiStack(app, 'EtpApi', { ...common, buildVersion });
+
+// Observability (SRS 6.6). The alert email is context, never committed (FR-OBS-3); with real
+// credentials it is required, so a deploy cannot silently drop the subscription or the budget.
+const alertEmail = app.node.tryGetContext('alertEmail') as string | undefined;
+if (!alertEmail && account) {
+  throw new Error('Pass the alert email: -c alertEmail=<address>');
+}
+new ObservabilityStack(app, 'EtpObservability', {
+  ...common,
+  alertsTopic: foundation.alertsTopic,
+  ...(alertEmail ? { alertEmail } : {}),
+  budgetUsd: Number(app.node.tryGetContext('budgetUsd') ?? 10),
+  freshnessEnabled: String(app.node.tryGetContext('freshnessMonitor')) === 'on',
+  apiName: 'etp-query-api',
+  apiStage: 'live',
+  apiFunctions: Object.values(api.functions),
+});
 
 // Greengrass edge (SRS 6.2). The image tag comes from scripts/publish-simulator-image.ts.
 // Credential-free synth (CI) may use a placeholder; with real credentials (deploy, diff) a missing

@@ -14,3 +14,4 @@ minimumReleaseAgeExclude:
   - '@aws-sdk/client-ecr@3.1148.0'
   - '@aws-sdk/client-greengrassv2@3.1148.0'
   - '@aws-sdk/client-ssm@3.1148.0'
+  - '@aws-sdk/client-scheduler@3.1148.0'
